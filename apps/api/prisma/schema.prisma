@@ -1,0 +1,89 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Socio {
+  id            Int          @id @default(autoincrement())
+  numero        Int          @unique
+  nombre        String
+  apellido      String
+  dni           String       @unique
+  email         String?
+  telefono      String?
+  direccion     String?
+  observaciones String?
+  fechaAlta     DateTime     @db.Date
+  fechaBaja     DateTime?    @db.Date
+  motivoBaja    String?
+  asignaciones  Asignacion[]
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@index([apellido, nombre])
+}
+
+model Parcela {
+  id           Int          @id @default(autoincrement())
+  codigo       String       @unique
+  sector       String?
+  descripcion  String?
+  asignaciones Asignacion[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+}
+
+/// Titularidad de una parcela por un socio. `hasta` en null = asignación vigente.
+/// La migración agrega un índice único parcial: una sola asignación vigente por parcela.
+model Asignacion {
+  id        Int       @id @default(autoincrement())
+  socio     Socio     @relation(fields: [socioId], references: [id])
+  socioId   Int
+  parcela   Parcela   @relation(fields: [parcelaId], references: [id])
+  parcelaId Int
+  desde     DateTime  @db.Date
+  hasta     DateTime? @db.Date
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([socioId])
+  @@index([parcelaId])
+}
+
+enum Rol {
+  SUPERADMIN
+  ADMIN
+}
+
+model Usuario {
+  id                  Int       @id @default(autoincrement())
+  nombre              String
+  email               String    @unique
+  passwordHash        String
+  rol                 Rol       @default(ADMIN)
+  activo              Boolean   @default(true)
+  /// Se activa al crear el usuario o restablecer su contraseña.
+  debeCambiarPassword Boolean   @default(true)
+  ultimoIngreso       DateTime?
+  sesiones            Sesion[]
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+}
+
+/// Sesión de navegador. Se guarda el hash del token, nunca el token.
+model Sesion {
+  id        Int      @id @default(autoincrement())
+  tokenHash String   @unique
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  usuarioId Int
+  expiraEn  DateTime
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([usuarioId])
+}

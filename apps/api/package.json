@@ -1,0 +1,38 @@
+{
+  "name": "@mf/api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "nest build",
+    "dev": "nest start --watch",
+    "start": "node dist/main.js",
+    "typecheck": "tsc --noEmit",
+    "db:migrate": "prisma migrate deploy",
+    "db:migrate:dev": "prisma migrate dev",
+    "db:seed": "tsx --env-file=.env prisma/seed.ts",
+    "prisma:generate": "prisma generate",
+    "postinstall": "prisma generate",
+    "usuarios:superadmin": "tsx --env-file=.env prisma/crear-superadmin.ts"
+  },
+  "dependencies": {
+    "@mf/shared": "0.1.0",
+    "@nestjs/common": "^11.1.6",
+    "@nestjs/core": "^11.1.6",
+    "@nestjs/platform-express": "^11.1.6",
+    "@prisma/client": "~6.19.3",
+    "argon2": "^0.44.0",
+    "cookie-parser": "^1.4.7",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^11.0.10",
+    "@types/cookie-parser": "^1.4.10",
+    "@types/express": "^5.0.3",
+    "@types/node": "^22.18.0",
+    "prisma": "~6.19.3",
+    "tsx": "^4.20.5",
+    "typescript": "~5.9.3"
+  }
+}

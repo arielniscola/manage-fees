@@ -1,0 +1,103 @@
+{
+  "pages": [
+    {
+      "id": "page-1",
+      "name": "Pantallas"
+    },
+    {
+      "id": "page-2",
+      "name": "Sistema visual"
+    },
+    {
+      "id": "page-3",
+      "name": "Opciones descartadas"
+    }
+  ],
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "title": "Panel de inicio",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 1080,
+      "page": "page-1"
+    },
+    {
+      "file": "Socios.dc.html",
+      "title": "Listado de socios",
+      "x": 1600,
+      "y": 0,
+      "w": 1440,
+      "h": 1080,
+      "page": "page-1"
+    },
+    {
+      "file": "FichaSocio.dc.html",
+      "title": "Ficha del socio",
+      "x": 3200,
+      "y": 0,
+      "w": 1440,
+      "h": 1080,
+      "page": "page-1"
+    },
+    {
+      "file": "AltaSocio.dc.html",
+      "title": "Alta de socio",
+      "x": 0,
+      "y": 1240,
+      "w": 1440,
+      "h": 1080,
+      "page": "page-1"
+    },
+    {
+      "file": "RegistrarPago.dc.html",
+      "title": "Registrar pago",
+      "x": 1600,
+      "y": 1240,
+      "w": 1440,
+      "h": 1080,
+      "page": "page-1"
+    },
+    {
+      "file": "Morosos.dc.html",
+      "title": "Morosos",
+      "x": 3200,
+      "y": 1240,
+      "w": 1440,
+      "h": 1080,
+      "page": "page-1"
+    },
+    {
+      "file": "DirectionB.dc.html",
+      "title": "B · Pino y Papel",
+      "x": 0,
+      "y": 0,
+      "w": 1280,
+      "h": 2300,
+      "page": "page-2"
+    },
+    {
+      "file": "DirectionA.dc.html",
+      "title": "A · Pino Institucional",
+      "x": 0,
+      "y": 0,
+      "w": 1280,
+      "h": 2300,
+      "page": "page-3"
+    },
+    {
+      "file": "DirectionC.dc.html",
+      "title": "C · Pino Nocturno",
+      "x": 1400,
+      "y": 0,
+      "w": 1280,
+      "h": 2300,
+      "page": "page-3"
+    }
+  ],
+  "launch": {
+    "view": "canvas",
+    "page": "page-1"
+  }
+}

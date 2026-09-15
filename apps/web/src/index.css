@@ -1,0 +1,60 @@
+@import 'tailwindcss';
+
+/* Sistema visual «Pino y Papel» — ver design/DirectionB.dc.html */
+@theme {
+  --font-sans: 'Figtree', 'Segoe UI', system-ui, sans-serif;
+  --font-serif: 'Newsreader', Georgia, 'Times New Roman', serif;
+
+  --color-papel: #f5f1e8;
+  --color-superficie: #fffdf8;
+  --color-superficie-2: #faf6ee;
+  --color-borde: #e2dacb;
+  --color-tinta: #22251f;
+  --color-tenue: #6d6a5f;
+  --color-placeholder: #a39e90;
+
+  --color-pino-50: #f0f3ec;
+  --color-pino-100: #dce5d6;
+  --color-pino-200: #b7cbae;
+  --color-pino-300: #8cae80;
+  --color-pino-400: #5e8a55;
+  --color-pino-500: #3e6b42;
+  --color-pino-600: #2b5337;
+  --color-pino-700: #22442d;
+  --color-pino-800: #1a3423;
+  --color-pino-900: #122419;
+
+  --color-terracota: #b85c38;
+
+  --color-ok: #46702a;
+  --color-ok-fondo: #e9f0dc;
+  --color-pend: #8e6210;
+  --color-pend-fondo: #f6ecd2;
+  --color-mor: #a63d2a;
+  --color-mor-fondo: #f6e1d9;
+  --color-baja: #6d6a5f;
+  --color-baja-fondo: #ece7dc;
+
+  --radius-control: 10px;
+  --radius-card: 14px;
+}
+
+@layer base {
+  html {
+    color-scheme: light;
+  }
+  body {
+    @apply bg-papel text-tinta font-sans antialiased;
+  }
+  ::placeholder {
+    color: var(--color-placeholder);
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-pino-400);
+    outline-offset: 2px;
+  }
+}
+
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}

@@ -1,0 +1,18 @@
+{
+  "name": "manage-fees",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build:shared": "npm run build -w @mf/shared",
+    "dev:api": "npm run dev -w @mf/api",
+    "dev:web": "npm run dev -w @mf/web",
+    "build": "npm run build -w @mf/shared && npm run build -w @mf/api && npm run build -w @mf/web",
+    "typecheck": "npm run build:shared && npm run typecheck -w @mf/api && npm run typecheck -w @mf/web",
+    "test": "npm run test -w @mf/shared",
+    "db:migrate": "npm run db:migrate -w @mf/api",
+    "db:seed": "npm run db:seed -w @mf/api"
+  }
+}
