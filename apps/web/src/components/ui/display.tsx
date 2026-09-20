@@ -166,3 +166,16 @@ export function ErrorCarga({ mensaje, onReintentar }: { mensaje: string; onReint
     </div>
   );
 }
+
+/** Pie de una tarjeta que muestra solo lo más reciente: abre el resto. */
+export function PieVerMas({ onClick, children }: { onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="block w-full border-t border-borde px-6 py-3 text-center text-[13px] font-semibold text-pino-600 transition-colors hover:bg-superficie-2"
+    >
+      {children}
+    </button>
+  );
+}

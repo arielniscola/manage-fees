@@ -3,6 +3,7 @@ import type {
   AsignacionCrearInput,
   AsignacionLiberarInput,
   Paginado,
+  ResultadoImportacion,
   SocioActualizarInput,
   SocioBajaInput,
   SocioCrearInput,
@@ -92,3 +93,41 @@ export function useLiberarParcela() {
     onSuccess: () => invalidar(),
   });
 }
+
+// ---------------------------------------------------------------- Importación del padrón
+
+/** El archivo y, si se eligió, el loteo donde se crean las manzanas y lotes que falten. */
+export interface ArchivoPadron {
+  archivo: File;
+  loteoId?: number;
+}
+
+const conLoteo = (path: string, loteoId?: number) => (loteoId ? `${path}?loteoId=${loteoId}` : path);
+
+/** Analiza el archivo sin escribir nada: dice qué pasaría con cada fila. */
+export function usePrevisualizarImportacion() {
+  return useMutation({
+    mutationFn: ({ archivo, loteoId }: ArchivoPadron) =>
+      api.subir<ResultadoImportacion>(conLoteo('/socios/importar/previsualizar', loteoId), archivo),
+  });
+}
+
+/** Confirma la importación. Todo o nada: si alguna fila falla, no entra ninguna. */
+export function useImportarSocios() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ archivo, loteoId }: ArchivoPadron) =>
+      api.subir<ResultadoImportacion>(conLoteo('/socios/importar', loteoId), archivo),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: clavesSocios.todos });
+      // Las parcelas quedan asignadas, y puede haber manzanas y lotes nuevos: sus
+      // listados y el panel también cambian.
+      void qc.invalidateQueries({ queryKey: ['parcelas'] });
+      void qc.invalidateQueries({ queryKey: ['sectores'] });
+      void qc.invalidateQueries({ queryKey: ['loteos'] });
+      void qc.invalidateQueries({ queryKey: ['panel'] });
+    },
+  });
+}
+
+export const urlPlantillaPadron = (): string => '/api/socios/importar/plantilla?formato=csv';

@@ -11,7 +11,7 @@ import { PantallaAcceso } from './PantallaAcceso';
 
 /** Solo se vuelve a rutas internas, nunca a una URL externa. */
 function destinoSeguro(volver: string | null): string {
-  return volver && volver.startsWith('/') && !volver.startsWith('//') ? volver : '/socios';
+  return volver && volver.startsWith('/') && !volver.startsWith('//') ? volver : '/panel';
 }
 
 export function LoginPage() {
@@ -22,7 +22,7 @@ export function LoginPage() {
   const [verPassword, setVerPassword] = useState(false);
   const { register, handleSubmit, formState: { errors } } = useForm<LoginInput, unknown, Login>({
     resolver: zodResolver(loginSchema),
-    defaultValues: { email: '', password: '' },
+    defaultValues: { username: '', password: '' },
   });
 
   if (yo.data) return <Navigate to={destinoSeguro(params.get('volver'))} replace />;
@@ -34,7 +34,7 @@ export function LoginPage() {
   );
 
   return (
-    <PantallaAcceso titulo="Ingresar" descripcion="Usá el email y la contraseña que te dio el administrador del sistema.">
+    <PantallaAcceso titulo="Ingresar" descripcion="Usá el usuario y la contraseña que te dio el administrador del sistema.">
       <form onSubmit={onSubmit} noValidate className="flex flex-col gap-5">
         {login.isError && (
           <div role="alert" className="flex items-start gap-2.5 rounded-control border border-mor/25 bg-mor-fondo px-4 py-3 text-sm text-mor">
@@ -42,8 +42,16 @@ export function LoginPage() {
             {login.error.message}
           </div>
         )}
-        <Field label="Email" htmlFor="email" error={errors.email?.message}>
-          <Input id="email" type="email" autoComplete="username" autoFocus invalido={!!errors.email} {...register('email')} />
+        <Field label="Usuario" htmlFor="username" error={errors.username?.message}>
+          <Input
+            id="username"
+            autoComplete="username"
+            autoCapitalize="none"
+            spellCheck={false}
+            autoFocus
+            invalido={!!errors.username}
+            {...register('username')}
+          />
         </Field>
         <Field label="Contraseña" htmlFor="password" error={errors.password?.message}>
           <div className="relative">

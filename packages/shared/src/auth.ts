@@ -9,6 +9,20 @@ export const ETIQUETA_ROL: Record<Rol, string> = {
 };
 
 export const PASSWORD_MIN = 10;
+export const USERNAME_MIN = 3;
+export const USERNAME_MAX = 30;
+
+/**
+ * Nombre de usuario para ingresar. Se guarda siempre en minúsculas, así que «Tesoreria»
+ * y «tesoreria» son el mismo usuario y nadie puede registrar los dos.
+ */
+export const usernameSchema = z
+  .string({ required_error: 'Ingresá el usuario' })
+  .trim()
+  .toLowerCase()
+  .min(USERNAME_MIN, `El usuario debe tener al menos ${USERNAME_MIN} caracteres`)
+  .max(USERNAME_MAX, `Máximo ${USERNAME_MAX} caracteres`)
+  .regex(/^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/, 'Usá solo letras, números, punto, guion y guion bajo');
 
 const emailSchema = z
   .string({ required_error: 'Ingresá el email' })
@@ -25,7 +39,8 @@ export const passwordNuevaSchema = z
   .refine((s) => /[a-zA-Z]/.test(s) && /\d/.test(s), 'La contraseña debe combinar letras y números');
 
 export const loginSchema = z.object({
-  email: emailSchema,
+  /** Acá no se valida el formato: un usuario inexistente da el mismo error que una contraseña mala. */
+  username: z.string({ required_error: 'Ingresá el usuario' }).trim().toLowerCase().min(1, 'Ingresá el usuario').max(USERNAME_MAX),
   password: z.string({ required_error: 'Ingresá la contraseña' }).min(1, 'Ingresá la contraseña').max(128),
 });
 export type LoginInput = z.input<typeof loginSchema>;
@@ -44,6 +59,8 @@ export type CambiarPassword = z.output<typeof cambiarPasswordSchema>;
 
 export const usuarioCrearSchema = z.object({
   nombre: z.string({ required_error: 'Ingresá el nombre' }).trim().min(1, 'Ingresá el nombre').max(80),
+  /** Con esto ingresa al sistema. */
+  username: usernameSchema,
   email: emailSchema,
   rol: z.enum(ROLES, { errorMap: () => ({ message: 'Elegí un rol' }) }),
   /** Contraseña temporal: el usuario la cambia en su primer ingreso. */
@@ -63,6 +80,7 @@ export type RestablecerPassword = z.output<typeof restablecerPasswordSchema>;
 export interface UsuarioSesion {
   id: number;
   nombre: string;
+  username: string;
   email: string;
   rol: Rol;
   debeCambiarPassword: boolean;

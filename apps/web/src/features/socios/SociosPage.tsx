@@ -1,20 +1,31 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
-import { ChevronRight, Plus, Search } from 'lucide-react';
+import { ChevronRight, Plus, Search, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/field';
 import { Avatar, Badge, Card, Chips, ErrorCarga, FilasCargando, Paginacion, Tabla, Td, Th, Vacio } from '@/components/ui/display';
 import { Encabezado } from '@/layout/AppLayout';
+import { useLoteoActivo } from '@/layout/loteo-activo';
 import { dni, fecha, iniciales, nombreCompleto, plural } from '@/lib/formato';
 import { useDebounce, useFiltrosUrl } from '@/lib/hooks';
+import { EstadoDeCuenta } from '@/features/cuotas/estados';
 import { useSocios } from './api';
 
-type EstadoFiltro = 'activo' | 'baja' | 'todos';
+type EstadoFiltro = 'activo' | 'moroso' | 'suplente' | 'baja' | 'todos';
 const PAGE_SIZE = 20;
+
+const ETIQUETA_LISTADO: Record<EstadoFiltro, [string, string]> = {
+  activo: ['socio', 'socios'],
+  moroso: ['socio en mora', 'socios en mora'],
+  suplente: ['suplente', 'suplentes'],
+  baja: ['socio dado de baja', 'socios dados de baja'],
+  todos: ['socio', 'socios'],
+};
 
 export function SociosPage() {
   const navigate = useNavigate();
-  const filtros = useFiltrosUrl<EstadoFiltro>('activo');
+  const { loteoId } = useLoteoActivo();
+  const filtros = useFiltrosUrl<EstadoFiltro>('activo', loteoId);
   const [texto, setTexto] = useState(filtros.q);
   const q = useDebounce(texto);
 
@@ -25,6 +36,7 @@ export function SociosPage() {
   const { data, isPending, isError, error, refetch, isPlaceholderData } = useSocios({
     q: filtros.q || undefined,
     estado: filtros.estado,
+    loteoId,
     page: filtros.page,
     pageSize: PAGE_SIZE,
   });
@@ -34,12 +46,17 @@ export function SociosPage() {
   return (
     <>
       <Encabezado
-        antetitulo={data ? plural(data.total, filtros.estado === 'baja' ? 'socio dado de baja' : 'socio', filtros.estado === 'baja' ? 'socios dados de baja' : 'socios') : ' '}
+        antetitulo={data ? plural(data.total, ...ETIQUETA_LISTADO[filtros.estado]) : ' '}
         titulo="Socios"
         acciones={
-          <Button onClick={() => navigate('/socios/nuevo')}>
-            <Plus /> Nuevo socio
-          </Button>
+          <>
+            <Button variante="secundario" onClick={() => navigate('/socios/importar')}>
+              <Upload /> Importar
+            </Button>
+            <Button onClick={() => navigate('/socios/nuevo')}>
+              <Plus /> Nuevo socio
+            </Button>
+          </>
         }
       />
 
@@ -62,6 +79,8 @@ export function SociosPage() {
           onChange={(estado) => filtros.actualizar({ estado })}
           opciones={[
             { valor: 'activo', label: 'Activos' },
+            { valor: 'moroso', label: 'Morosos' },
+            { valor: 'suplente', label: 'Suplentes' },
             { valor: 'baja', label: 'Bajas' },
             { valor: 'todos', label: 'Todos' },
           ]}
@@ -73,7 +92,14 @@ export function SociosPage() {
           <ErrorCarga mensaje={error.message} onReintentar={() => void refetch()} />
         ) : data && data.total === 0 ? (
           buscando ? (
-            <Vacio titulo="No hay socios que coincidan" descripcion="Probá con otro nombre, DNI o número de parcela, o cambiá el filtro de estado." />
+            <Vacio
+              titulo={filtros.estado === 'moroso' && !filtros.q ? 'No hay socios en mora' : 'No hay socios que coincidan'}
+              descripcion={
+                filtros.estado === 'moroso' && !filtros.q
+                  ? 'Ningún socio tiene cuotas vencidas impagas.'
+                  : 'Probá con otro nombre, DNI o número de parcela, o cambiá el filtro de estado.'
+              }
+            />
           ) : (
             <Vacio
               titulo="Todavía no hay socios"
@@ -93,6 +119,7 @@ export function SociosPage() {
                   <Th className="w-[72px]">N°</Th>
                   <Th>Socio</Th>
                   <Th>Parcelas</Th>
+                  <Th>Cuenta</Th>
                   <Th>Contacto</Th>
                   <Th>Socio desde</Th>
                   <Th>Estado</Th>
@@ -101,7 +128,7 @@ export function SociosPage() {
               </thead>
               <tbody>
                 {isPending ? (
-                  <FilasCargando columnas={7} />
+                  <FilasCargando columnas={8} />
                 ) : (
                   data.items.map((s) => (
                     <tr
@@ -123,16 +150,23 @@ export function SociosPage() {
                       </Td>
                       <Td>
                         {s.parcelas.length === 0 ? (
-                          <span className="text-tenue">Sin parcelas</span>
+                          s.tipo === 'SUPLENTE' ? (
+                            <Badge tono="pend">Suplente</Badge>
+                          ) : (
+                            <span className="text-tenue">Sin parcelas</span>
+                          )
                         ) : (
                           <div className="flex flex-wrap gap-1.5">
                             {s.parcelas.map((p) => (
                               <Badge key={p.id} tono="pino" punto={false}>
-                                {p.codigo}
+                                {p.etiqueta}
                               </Badge>
                             ))}
                           </div>
                         )}
+                      </Td>
+                      <Td>
+                        <EstadoDeCuenta cuenta={s.estadoCuenta} />
                       </Td>
                       <Td>
                         <div className="flex flex-col text-[13px]">

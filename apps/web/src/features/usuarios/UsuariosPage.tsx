@@ -97,7 +97,9 @@ export function UsuariosPage() {
                               {u.nombre}
                               {soyYo && <span className="ml-2 text-xs font-normal text-tenue">(vos)</span>}
                             </span>
-                            <span className="text-xs text-tenue">{u.email}</span>
+                            <span className="text-xs text-tenue">
+                              <span className="font-mono">{u.username}</span> · {u.email}
+                            </span>
                           </div>
                         </div>
                       </Td>
@@ -223,8 +225,8 @@ function UsuarioDialog({ usuario, esYo, onCerrar }: { usuario: UsuarioListItem |
     if (usuario) {
       reset(
         existente
-          ? { nombre: existente.nombre, email: existente.email, rol: existente.rol, password: '' }
-          : { nombre: '', email: '', rol: 'ADMIN', password: generarPasswordTemporal() },
+          ? { nombre: existente.nombre, username: existente.username, email: existente.email, rol: existente.rol, password: '' }
+          : { nombre: '', username: '', email: '', rol: 'ADMIN', password: generarPasswordTemporal() },
       );
     }
   }, [usuario, existente, reset]);
@@ -235,15 +237,21 @@ function UsuarioDialog({ usuario, esYo, onCerrar }: { usuario: UsuarioListItem |
   const onSubmit = handleSubmit(async (datos) => {
     try {
       if (existente) {
-        await actualizar.mutateAsync({ id: existente.id, nombre: datos.nombre, email: datos.email, rol: datos.rol });
+        await actualizar.mutateAsync({
+          id: existente.id,
+          nombre: datos.nombre,
+          username: datos.username,
+          email: datos.email,
+          rol: datos.rol,
+        });
         toast.success('Usuario actualizado');
       } else {
         const u = await crear.mutateAsync(datos);
-        toast.success(`Usuario creado. Pasale a ${u.nombre} su email y la contraseña temporal.`);
+        toast.success(`Usuario creado. Pasale a ${u.nombre} su usuario «${u.username}» y la contraseña temporal.`);
       }
       onCerrar();
     } catch (e) {
-      if (e instanceof ApiError && e.field && ['nombre', 'email', 'rol', 'password'].includes(e.field)) {
+      if (e instanceof ApiError && e.field && ['nombre', 'username', 'email', 'rol', 'password'].includes(e.field)) {
         setError(e.field as keyof UsuarioCrearInput, { message: e.message }, { shouldFocus: true });
       } else {
         toast.error(e instanceof Error ? e.message : 'No se pudo guardar');
@@ -270,7 +278,25 @@ function UsuarioDialog({ usuario, esYo, onCerrar }: { usuario: UsuarioListItem |
         <Field label="Nombre" htmlFor="usuario-nombre" requerido error={errors.nombre?.message}>
           <Input id="usuario-nombre" autoFocus autoComplete="off" invalido={!!errors.nombre} {...register('nombre')} />
         </Field>
-        <Field label="Email" htmlFor="usuario-email" requerido error={errors.email?.message} ayuda="Es el usuario con el que va a ingresar">
+        <Field
+          label="Usuario"
+          htmlFor="usuario-username"
+          requerido
+          error={errors.username?.message}
+          ayuda="Con esto ingresa al sistema. Letras, números, punto, guion y guion bajo."
+        >
+          <Input
+            id="usuario-username"
+            autoComplete="off"
+            autoCapitalize="none"
+            spellCheck={false}
+            className="font-mono"
+            placeholder="tesoreria"
+            invalido={!!errors.username}
+            {...register('username')}
+          />
+        </Field>
+        <Field label="Email" htmlFor="usuario-email" requerido error={errors.email?.message} ayuda="Para contacto; no sirve para ingresar">
           <Input id="usuario-email" type="email" autoComplete="off" invalido={!!errors.email} {...register('email')} />
         </Field>
         <Field label="Rol" htmlFor="usuario-rol" requerido error={errors.rol?.message} ayuda={esYo ? 'No podés cambiar tu propio rol' : undefined}>

@@ -63,7 +63,7 @@ export function BajaSocioDialog({ socio, abierto, onAbiertoChange }: DialogoSoci
       ancho="sm"
       descripcion={
         n > 0
-          ? `Se van a liberar ${n === 1 ? 'su parcela' : `sus ${n} parcelas`} (${socio.parcelas.map((p) => p.codigo).join(', ')}) con la misma fecha.`
+          ? `Se van a liberar ${n === 1 ? 'su parcela' : `sus ${n} parcelas`} (${socio.parcelas.map((p) => p.etiqueta).join(', ')}) con la misma fecha.`
           : 'El socio no tiene parcelas vigentes.'
       }
       pie={
@@ -110,8 +110,8 @@ export function AsignarParcelaDialog({ socio, abierto, onAbiertoChange }: Dialog
       { parcelaId, desde },
       {
         onSuccess: () => {
-          const codigo = libres.data?.items.find((p) => p.id === parcelaId)?.codigo;
-          toast.success(`Parcela ${codigo ?? ''} asignada a ${nombreCompleto(socio)}`);
+          const cual = libres.data?.items.find((p) => p.id === parcelaId)?.etiqueta;
+          toast.success(`Parcela ${cual ?? ''} asignada a ${nombreCompleto(socio)}`);
           onAbiertoChange(false);
         },
         onError: (e) => {
@@ -178,8 +178,8 @@ export function AsignarParcelaDialog({ socio, abierto, onAbiertoChange }: Dialog
                       elegida ? 'bg-pino-50' : 'hover:bg-superficie-2',
                     )}
                   >
-                    <span className="w-24 font-semibold tabular">{p.codigo}</span>
-                    <span className="flex-1 text-tenue">{[p.sector, p.descripcion].filter(Boolean).join(' · ') || '—'}</span>
+                    <span className="w-40 truncate font-semibold tabular">{p.etiqueta}</span>
+                    <span className="flex-1 text-tenue">{[p.sector?.nombre, p.descripcion].filter(Boolean).join(' · ') || '—'}</span>
                     {elegida && <Check className="size-4 text-pino-600" />}
                   </button>
                 );
@@ -216,7 +216,7 @@ export function LiberarParcelaDialog({ asignacion, onCerrar }: { asignacion: Asi
       { asignacionId: asignacion.id, ...datos },
       {
         onSuccess: () => {
-          toast.success(`Parcela ${asignacion.parcela.codigo} liberada`);
+          toast.success(`Parcela ${asignacion.parcela.etiqueta} liberada`);
           onCerrar();
         },
         onError: (e) => {
@@ -231,7 +231,7 @@ export function LiberarParcelaDialog({ asignacion, onCerrar }: { asignacion: Asi
     <Dialog
       abierto={!!asignacion}
       onAbiertoChange={(v) => !v && onCerrar()}
-      titulo={`Liberar parcela ${asignacion?.parcela.codigo ?? ''}`}
+      titulo={`Liberar parcela ${asignacion?.parcela.etiqueta ?? ''}`}
       ancho="sm"
       descripcion="La parcela queda libre para asignarla a otro socio. El historial se conserva."
       pie={

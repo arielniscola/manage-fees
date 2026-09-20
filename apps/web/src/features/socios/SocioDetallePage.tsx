@@ -2,11 +2,21 @@ import { useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { Pencil, Plus, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
-import type { AsignacionDeSocio, SocioDetalle } from '@mf/shared';
+import {
+  ETIQUETA_ESTADO_CIVIL,
+  ETIQUETA_TIPO_SOCIO,
+  formatearCuit,
+  pesos,
+  type AsignacionDeSocio,
+  type SocioDetalle,
+} from '@mf/shared';
 import { Button } from '@/components/ui/button';
 import { Avatar, Badge, Card, CardHeader, ErrorCarga, Tabla, Td, Th, Vacio } from '@/components/ui/display';
 import { Encabezado } from '@/layout/AppLayout';
 import { dni, fecha, iniciales, mesAnio, nombreCompleto, plural } from '@/lib/formato';
+import { HistorialDePagos } from '@/features/cobros/HistorialDePagos';
+import { PlanesDelSocio } from '@/features/planes/PlanesDelSocio';
+import { CuotasDelSocio } from '@/features/cuotas/CuotasDelSocio';
 import { useReactivarSocio, useSocio } from './api';
 import { AsignarParcelaDialog, BajaSocioDialog, LiberarParcelaDialog } from './dialogs';
 
@@ -37,15 +47,33 @@ export function SocioDetallePage() {
           <div className="flex flex-wrap items-center gap-3">
             <span className="font-serif text-[26px] font-medium">{nombreCompleto(socio)}</span>
             {socio.estado === 'activo' ? <Badge tono="ok">Activo</Badge> : <Badge tono="baja">Baja</Badge>}
+            {socio.tipo === 'SUPLENTE' && <Badge tono="pend">{ETIQUETA_TIPO_SOCIO.SUPLENTE}</Badge>}
           </div>
           <span className="text-sm tabular text-tenue">
             N° {socio.numero} · Socio desde {mesAnio(socio.fechaAlta)}
             {socio.fechaBaja && ` · Baja el ${fecha(socio.fechaBaja)}${socio.motivoBaja ? ` (${socio.motivoBaja})` : ''}`}
           </span>
         </div>
-        <div className="flex flex-col items-end gap-0.5 pr-2">
-          <span className="text-xs font-semibold uppercase tracking-[0.06em] text-tenue">Parcelas vigentes</span>
-          <span className="font-serif text-[30px] font-medium tabular">{socio.parcelas.length}</span>
+        <div className="flex items-start gap-8 pr-2">
+          <div className="flex flex-col items-end gap-0.5">
+            <span className="text-xs font-semibold uppercase tracking-[0.06em] text-tenue">Parcelas vigentes</span>
+            <span className="font-serif text-[30px] font-medium tabular">{socio.parcelas.length}</span>
+          </div>
+          <div className="flex flex-col items-end gap-0.5">
+            <span className="text-xs font-semibold uppercase tracking-[0.06em] text-tenue">Deuda</span>
+            <span className={`font-serif text-[30px] font-medium tabular ${socio.estadoCuenta.deuda > 0 ? 'text-mor' : ''}`}>
+              {pesos(socio.estadoCuenta.deuda)}
+            </span>
+            {socio.estadoCuenta.pendientes > 0 && (
+              <span className="text-xs text-tenue">
+                {plural(socio.estadoCuenta.pendientes, 'cuota pendiente', 'cuotas pendientes')}
+                {socio.estadoCuenta.vencidas > 0 && `, ${socio.estadoCuenta.vencidas} vencida${socio.estadoCuenta.vencidas === 1 ? '' : 's'}`}
+              </span>
+            )}
+            {socio.estadoCuenta.interes > 0 && (
+              <span className="text-xs text-tenue">incluye {pesos(socio.estadoCuenta.interes)} de interés</span>
+            )}
+          </div>
         </div>
       </Card>
 
@@ -54,16 +82,34 @@ export function SocioDetallePage() {
           <h2 className="font-serif text-xl font-medium">Datos personales</h2>
           <dl className="grid grid-cols-2 gap-x-5 gap-y-[18px]">
             <Dato etiqueta="DNI">{dni(socio.dni)}</Dato>
-            <Dato etiqueta="Fecha de alta">{fecha(socio.fechaAlta)}</Dato>
+            <Dato etiqueta="CUIT">{socio.cuit ? formatearCuit(socio.cuit) : ''}</Dato>
+            <Dato etiqueta="Fecha de nacimiento">{socio.fechaNacimiento ? fecha(socio.fechaNacimiento) : ''}</Dato>
+            <Dato etiqueta="Estado civil">{socio.estadoCivil ? ETIQUETA_ESTADO_CIVIL[socio.estadoCivil] : ''}</Dato>
             <Dato etiqueta="Email">{socio.email}</Dato>
             <Dato etiqueta="Teléfono">{socio.telefono}</Dato>
+            <Dato etiqueta="Fecha de alta">{fecha(socio.fechaAlta)}</Dato>
             <Dato etiqueta="Dirección" ancho>{socio.direccion}</Dato>
             {socio.observaciones && <Dato etiqueta="Observaciones" ancho>{socio.observaciones}</Dato>}
           </dl>
+
+          <div className="flex flex-col gap-2 border-t border-borde pt-4">
+            <span className="text-xs text-tenue">Documentación</span>
+            <div className="flex flex-wrap gap-2">
+              <Documento listo={socio.confirmado}>Confirmación</Documento>
+              <Documento listo={socio.fotocopiaDni}>Fotocopia del DNI</Documento>
+              <Documento listo={socio.actaMatrimonio}>Acta de matrimonio</Documento>
+            </div>
+          </div>
         </Card>
 
         <ParcelasSocio socio={socio} />
       </div>
+
+      <CuotasDelSocio socio={socio} />
+
+      <PlanesDelSocio socio={socio} />
+
+      <HistorialDePagos socio={socio} />
     </>
   );
 }
@@ -140,8 +186,8 @@ function ParcelasSocio({ socio }: { socio: SocioDetalle }) {
           <tbody>
             {[...vigentes, ...anteriores].map((a) => (
               <tr key={a.id} className={a.hasta ? 'text-tenue' : undefined}>
-                <Td className="font-semibold tabular">{a.parcela.codigo}</Td>
-                <Td>{a.parcela.sector ?? '—'}</Td>
+                <Td className="font-semibold tabular">{a.parcela.etiqueta}</Td>
+                <Td>{a.parcela.sector?.nombre ?? '—'}</Td>
                 <Td className="tabular">{fecha(a.desde)}</Td>
                 <Td className="tabular">{a.hasta ? fecha(a.hasta) : <Badge tono="ok">Vigente</Badge>}</Td>
                 <Td className="text-right">
@@ -159,6 +205,18 @@ function ParcelasSocio({ socio }: { socio: SocioDetalle }) {
       <AsignarParcelaDialog socio={socio} abierto={asignar} onAbiertoChange={setAsignar} />
       <LiberarParcelaDialog asignacion={liberar} onCerrar={() => setLiberar(null)} />
     </Card>
+  );
+}
+
+/** Una tilde de documentación: en verde si ya se recibió, apagada si falta. */
+function Documento({ listo, children }: { listo: boolean; children: ReactNode }) {
+  return listo ? (
+    <Badge tono="ok">{children}</Badge>
+  ) : (
+    <span className="inline-flex h-6 items-center gap-1.5 whitespace-nowrap rounded-full bg-superficie-2 px-2.5 text-xs text-tenue">
+      <span className="size-1.5 rounded-full bg-placeholder" />
+      {children}
+    </span>
   );
 }
 

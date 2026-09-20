@@ -29,3 +29,11 @@ export function iniciales(s: { nombre: string; apellido: string }): string {
 export function plural(n: number, singular: string, pluralForm = `${singular}s`): string {
   return `${n.toLocaleString('es-AR')} ${n === 1 ? singular : pluralForm}`;
 }
+
+/** 199.98 \u2192 '199,98 m\u00b2'. Los enteros van sin decimales. */
+export function metros(m2: number): string {
+  const texto = Number.isInteger(m2)
+    ? m2.toLocaleString('es-AR')
+    : m2.toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `${texto} m\u00b2`;
+}

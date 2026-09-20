@@ -1,12 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
   cambiarPasswordSchema,
+  cobroListarSchema,
+  cuotaListarSchema,
+  etiquetaParcela,
   hoy,
   loginSchema,
   parcelaCrearSchema,
   passwordNuevaSchema,
+  planListarSchema,
+  sectorListarSchema,
   socioActualizarSchema,
   socioCrearSchema,
+  socioListarSchema,
   usuarioCrearSchema,
 } from './index';
 
@@ -66,8 +72,18 @@ describe('esquemas de usuarios', () => {
     expect(passwordNuevaSchema.safeParse('pinoverde2026').success).toBe(true);
   });
 
-  it('normaliza el email del login', () => {
-    expect(loginSchema.parse({ email: ' Tesoreria@Club.org ', password: 'x' }).email).toBe('tesoreria@club.org');
+  it('normaliza el usuario del login: se ingresa con username, no con email', () => {
+    expect(loginSchema.parse({ username: '  Tesoreria ', password: 'x' }).username).toBe('tesoreria');
+    expect(loginSchema.safeParse({ username: '', password: 'x' }).success).toBe(false);
+  });
+
+  it('valida el formato del username al crear un usuario', () => {
+    const base = { nombre: 'Ana', email: 'ana@club.org', rol: 'ADMIN', password: 'pinoverde2026' };
+    expect(usuarioCrearSchema.parse({ ...base, username: ' Ana.Lopez ' }).username).toBe('ana.lopez');
+    expect(usuarioCrearSchema.safeParse({ ...base, username: 'ab' }).success).toBe(false);
+    expect(usuarioCrearSchema.safeParse({ ...base, username: 'ana lopez' }).success).toBe(false);
+    expect(usuarioCrearSchema.safeParse({ ...base, username: '.ana' }).success).toBe(false);
+    expect(usuarioCrearSchema.safeParse({ ...base, username: 'ana@club' }).success).toBe(false);
   });
 
   it('valida que la confirmación coincida y que la nueva sea distinta', () => {
@@ -79,6 +95,62 @@ describe('esquemas de usuarios', () => {
   });
 
   it('rechaza roles desconocidos', () => {
-    expect(usuarioCrearSchema.safeParse({ nombre: 'Ana', email: 'ana@club.org', rol: 'ROOT', password: 'pinoverde2026' }).success).toBe(false);
+    expect(
+      usuarioCrearSchema.safeParse({ nombre: 'Ana', username: 'ana', email: 'ana@club.org', rol: 'ROOT', password: 'pinoverde2026' }).success,
+    ).toBe(false);
+  });
+});
+
+describe('loteo activo en los listados', () => {
+  const listados = [
+    ['socios', socioListarSchema],
+    ['cuotas', cuotaListarSchema],
+    ['cobros', cobroListarSchema],
+    ['planes', planListarSchema],
+    ['sectores', sectorListarSchema],
+  ] as const;
+
+  it('acepta el loteo como número o como texto de la query', () => {
+    for (const [nombre, schema] of listados) {
+      expect(schema.parse({ loteoId: 3 }).loteoId, nombre).toBe(3);
+      expect(schema.parse({ loteoId: '3' }).loteoId, nombre).toBe(3);
+    }
+  });
+
+  it('sin loteo activo el filtro queda en undefined', () => {
+    for (const [nombre, schema] of listados) {
+      expect(schema.parse({}).loteoId, nombre).toBeUndefined();
+    }
+  });
+
+  it('rechaza ids que no son un loteo posible', () => {
+    for (const [nombre, schema] of listados) {
+      expect(schema.safeParse({ loteoId: 0 }).success, nombre).toBe(false);
+      expect(schema.safeParse({ loteoId: -1 }).success, nombre).toBe(false);
+      expect(schema.safeParse({ loteoId: 'lavalle' }).success, nombre).toBe(false);
+    }
+  });
+});
+
+describe('etiquetaParcela', () => {
+  const sector = (loteo: string | null) => ({
+    id: 1,
+    nombre: '7',
+    loteo: loteo === null ? null : { id: 1, nombre: loteo },
+  });
+
+  it('pone el loteo adelante, porque el código solo es único dentro del sector', () => {
+    expect(etiquetaParcela({ codigo: '7-1', sector: sector('Lavalle') })).toBe('Lavalle · 7-1');
+  });
+
+  it('distingue dos parcelas con el mismo código en loteos distintos', () => {
+    const lavalle = etiquetaParcela({ codigo: '7-1', sector: sector('Lavalle') });
+    const maipu = etiquetaParcela({ codigo: '7-1', sector: sector('Maipú') });
+    expect(lavalle).not.toBe(maipu);
+  });
+
+  it('se queda con el código cuando no hay loteo del que colgar', () => {
+    expect(etiquetaParcela({ codigo: '7-1', sector: sector(null) })).toBe('7-1');
+    expect(etiquetaParcela({ codigo: '7-1', sector: null })).toBe('7-1');
   });
 });
