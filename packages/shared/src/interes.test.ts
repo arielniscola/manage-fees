@@ -14,7 +14,7 @@ const cuota = (extra: Partial<{ importe: number; vencimiento: string; estado: st
   importe: 1_000_000,
   vencimiento: '2026-09-10',
   estado: 'PENDIENTE',
-  origen: 'SOCIAL',
+  origen: 'PARCELA',
   ...extra,
 });
 
@@ -59,9 +59,11 @@ describe('interesDeCuota', () => {
     expect(interesDeCuota(cuota(), null, hoy)).toBe(0);
   });
 
-  it('solo alcanza a las cuotas sociales pendientes', () => {
+  it('solo alcanza a las cuotas de parcela pendientes', () => {
     expect(interesDeCuota(cuota({ estado: 'PAGADA' }), config(), hoy)).toBe(0);
     expect(interesDeCuota(cuota({ estado: 'ANULADA' }), config(), hoy)).toBe(0);
+    // La cuota social es un aporte fijo del socio: no se recarga por mora.
+    expect(interesDeCuota(cuota({ origen: 'SOCIO' }), config(), hoy)).toBe(0);
     // La deuda de un plan de pago ya se refinanció una vez: no vuelve a devengar.
     expect(interesDeCuota(cuota({ origen: 'PLAN' }), config(), hoy)).toBe(0);
   });

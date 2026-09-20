@@ -84,8 +84,9 @@ export function vecesAplicado(vencimiento: string, hasta: string, diaAplicacion:
  * Interés acumulado de una cuota impaga, en centavos. Se calcula siempre sobre el importe
  * original: dos meses de mora al 5 % son 10 %, no 10,25 %. En modo único no pasa del 5 %.
  *
- * Alcanza a la cuota social y a las de parcela. Las de un plan de pago quedan afuera: su
- * deuda ya se refinanció una vez y el plan tiene sus propias reglas de incumplimiento.
+ * Alcanza solo a las cuotas de parcela. La cuota social no devenga mora: es un aporte fijo
+ * del socio y el club no lo recarga. Las de un plan de pago también quedan afuera: su deuda
+ * ya se refinanció una vez y el plan tiene sus propias reglas de incumplimiento.
  */
 export function interesDeCuota(
   cuota: { importe: number; vencimiento: string; estado: string; origen: string },
@@ -93,7 +94,7 @@ export function interesDeCuota(
   hoy: string,
 ): number {
   if (!config?.activo || config.porcentaje <= 0) return 0;
-  if (cuota.estado !== 'PENDIENTE' || cuota.origen === 'PLAN') return 0;
+  if (cuota.estado !== 'PENDIENTE' || cuota.origen !== 'PARCELA') return 0;
 
   const veces = vecesQueCorresponde(cuota.vencimiento, hoy, config);
   return veces === 0 ? 0 : Math.round((cuota.importe * config.porcentaje * veces) / 100);

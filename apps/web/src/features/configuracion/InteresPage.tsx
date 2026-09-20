@@ -189,8 +189,9 @@ function Formulario({ config }: { config: ConfiguracionInteres }) {
             {modo === 'UNICO'
               ? `una cuota al ${porcentaje || 0} % se recarga ese ${porcentaje || 0} % y nada más, aunque pasen meses.`
               : `tres meses de mora al ${porcentaje || 0} % son ${(porcentaje || 0) * 3} %, no más.`} No genera una cuota aparte —la deuda de la cuota impaga se muestra ya
-            recargada— y queda congelado en el recibo el día que el socio paga. Las cuotas de un plan de pago no
-            acumulan interés: esa deuda ya se refinanció una vez.
+            recargada— y queda congelado en el recibo el día que el socio paga. Solo alcanza a las cuotas de parcela: la
+            cuota social no se recarga, y las cuotas de un plan de pago tampoco, porque esa deuda ya se refinanció
+            una vez.
           </span>
         </div>
       </Card>
