@@ -7,34 +7,106 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Socio {
-  id            Int          @id @default(autoincrement())
-  numero        Int          @unique
-  nombre        String
-  apellido      String
-  dni           String       @unique
-  email         String?
-  telefono      String?
-  direccion     String?
-  observaciones String?
-  fechaAlta     DateTime     @db.Date
-  fechaBaja     DateTime?    @db.Date
-  motivoBaja    String?
-  asignaciones  Asignacion[]
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
-
-  @@index([apellido, nombre])
+/// Un titular tiene o tuvo parcelas; un suplente está en lista de espera para recibir una.
+enum TipoSocio {
+  TITULAR
+  SUPLENTE
 }
 
+enum EstadoCivil {
+  SOLTERO
+  CASADO
+  DIVORCIADO
+  VIUDO
+  SEPARADO
+  CONCUBINATO
+}
+
+model Socio {
+  id              Int          @id @default(autoincrement())
+  numero          Int          @unique
+  tipo            TipoSocio    @default(TITULAR)
+  nombre          String
+  apellido        String
+  dni             String       @unique
+  /// Sin guiones. Opcional: no todos los socios lo tienen cargado.
+  cuit            String?      @unique
+  fechaNacimiento DateTime?    @db.Date
+  estadoCivil     EstadoCivil?
+  email           String?
+  telefono        String?
+  direccion       String?
+  observaciones   String?
+  /// Documentación que el club va juntando de cada socio.
+  confirmado      Boolean      @default(false)
+  fotocopiaDni    Boolean      @default(false)
+  actaMatrimonio  Boolean      @default(false)
+  fechaAlta       DateTime     @db.Date
+  fechaBaja       DateTime?    @db.Date
+  motivoBaja      String?
+  asignaciones    Asignacion[]
+  cuotas          Cuota[]
+  cobros          Cobro[]
+  planes          PlanPago[]
+  avisos          EnvioAviso[]
+  transferenciasCedidas   Transferencia[] @relation("TransferenciasCedidas")
+  transferenciasRecibidas Transferencia[] @relation("TransferenciasRecibidas")
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([apellido, nombre])
+  @@index([tipo])
+}
+
+/// El código es único dentro de su sector, no en todo el sistema: el lote 1 de la manzana 7
+/// puede existir en dos loteos distintos. Lo garantizan dos índices parciales de la
+/// migración, uno para las parcelas con sector y otro para las que todavía no lo tienen.
 model Parcela {
   id           Int          @id @default(autoincrement())
-  codigo       String       @unique
-  sector       String?
+  codigo       String
+  /// Restrict: un sector con parcelas no se borra, se vacía primero.
+  sector       Sector?      @relation(fields: [sectorId], references: [id], onDelete: Restrict)
+  sectorId     Int?
+  /// Superficie del lote en metros cuadrados.
+  superficieM2 Decimal?     @db.Decimal(10, 2)
   descripcion  String?
   asignaciones Asignacion[]
+  cuotas       Cuota[]
+  transferencias Transferencia[]
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
+
+  @@index([sectorId])
+}
+
+/// El predio se organiza en Loteo > Sector > Parcela. El loteo es el fraccionamiento
+/// («Lavalle»); los dos niveles de arriba son opcionales para poder cargar parcelas
+/// antes de tener el mapa completo.
+/// La migración agrega un índice único sobre el nombre en minúsculas.
+model Loteo {
+  id          Int      @id @default(autoincrement())
+  nombre      String   @unique
+  descripcion String?
+  direccion   String?
+  sectores    Sector[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+/// Manzana dentro de un loteo: «7», «A-01».
+/// El nombre es único dentro de su loteo, no en todo el sistema: la manzana 7 puede
+/// existir en dos loteos distintos. Lo garantizan dos índices parciales de la migración.
+model Sector {
+  id          Int       @id @default(autoincrement())
+  nombre      String
+  loteo       Loteo?    @relation(fields: [loteoId], references: [id], onDelete: Restrict)
+  loteoId     Int?
+  descripcion String?
+  parcelas    Parcela[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([loteoId])
 }
 
 /// Titularidad de una parcela por un socio. `hasta` en null = asignación vigente.
@@ -47,6 +119,11 @@ model Asignacion {
   parcelaId Int
   desde     DateTime  @db.Date
   hasta     DateTime? @db.Date
+  cuotas    Cuota[]
+  /// Si esta titularidad terminó por una transferencia, el registro de esa transferencia.
+  cedidaEn    Transferencia? @relation("AsignacionCedida")
+  /// Si esta titularidad empezó por una transferencia, el registro de esa transferencia.
+  recibidaEn  Transferencia? @relation("AsignacionRecibida")
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
@@ -62,6 +139,9 @@ enum Rol {
 model Usuario {
   id                  Int       @id @default(autoincrement())
   nombre              String
+  /// Con esto ingresa al sistema. Siempre en minúsculas.
+  username            String    @unique
+  /// Para contacto y avisos; no se usa para ingresar.
   email               String    @unique
   passwordHash        String
   rol                 Rol       @default(ADMIN)
@@ -70,6 +150,11 @@ model Usuario {
   debeCambiarPassword Boolean   @default(true)
   ultimoIngreso       DateTime?
   sesiones            Sesion[]
+  transferencias      Transferencia[]
+  cobrosRegistrados   Cobro[]    @relation("CobrosRegistrados")
+  cobrosAnulados      Cobro[]    @relation("CobrosAnulados")
+  planesCreados       PlanPago[] @relation("PlanesCreados")
+  planesCancelados    PlanPago[] @relation("PlanesCancelados")
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 }
@@ -85,5 +170,335 @@ model Sesion {
   userAgent String?
   createdAt DateTime @default(now())
 
+  @@index([usuarioId])
+}
+
+enum Periodicidad {
+  MENSUAL
+  BIMESTRAL
+  TRIMESTRAL
+  SEMESTRAL
+  ANUAL
+}
+
+/// Qué cuota valoriza una tarifa. El socio con parcela paga las dos: una cuota social por
+/// ser socio y una cuota por cada parcela que tiene. Cada alcance lleva su propio historial,
+/// con su importe, su periodicidad y su día de vencimiento.
+enum AlcanceTarifa {
+  SOCIO
+  PARCELA
+}
+
+/// Valor de una cuota. La tabla es histórica: cada cambio agrega una fila con su mes de
+/// vigencia y solo afecta a los períodos que empiezan desde ahí en adelante.
+model Tarifa {
+  id             Int           @id @default(autoincrement())
+  alcance        AlcanceTarifa @default(PARCELA)
+  /// Centavos.
+  importe        Int
+  periodicidad   Periodicidad  @default(MENSUAL)
+  /// Día del primer mes del período en que vence la cuota. Se recorta al último día del mes.
+  diaVencimiento Int           @default(10)
+  /// Primer día del mes desde el que rige, dentro de su alcance.
+  vigenteDesde   DateTime      @db.Date
+  cuotas         Cuota[]
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@unique([alcance, vigenteDesde])
+}
+
+enum EstadoCuota {
+  PENDIENTE
+  PAGADA
+  ANULADA
+  /// Quedó absorbida por un plan de pago: la deuda vive ahora en las cuotas del plan.
+  REFINANCIADA
+}
+
+/// De dónde sale una cuota. `PARCELA` es el pago por la propiedad del terreno, una por
+/// parcela y período; `SOCIO` es la cuota social, una por socio y período, y solo la
+/// generan los socios que tienen parcela —los suplentes no pagan—; `PLAN` es una cuota
+/// de un plan de pago.
+enum OrigenCuota {
+  PARCELA
+  SOCIO
+  PLAN
+}
+
+/// Cuota a cobrar. Con origen PARCELA sale de una parcela y un período, y se imputa al socio
+/// que era titular cuando empezó el período. Con origen SOCIO es la cuota social de ese
+/// período, que no cuelga de ninguna parcela. Con origen PLAN es una cuota de un plan de
+/// pago y tampoco tiene parcela.
+/// La migración agrega un índice único parcial: una sola cuota social por parcela y período.
+model Cuota {
+  id              Int            @id @default(autoincrement())
+  socio           Socio          @relation(fields: [socioId], references: [id])
+  socioId         Int
+  /// Solo para origen PARCELA. Restrict y no SetNull: una cuota de parcela sin parcela
+  /// rompería su check de coherencia, y de todos modos nada con cuotas se puede borrar.
+  asignacion      Asignacion?    @relation(fields: [asignacionId], references: [id], onDelete: Restrict)
+  asignacionId    Int?
+  parcela         Parcela?       @relation(fields: [parcelaId], references: [id], onDelete: Restrict)
+  parcelaId       Int?
+  tarifa          Tarifa?        @relation(fields: [tarifaId], references: [id], onDelete: Restrict)
+  tarifaId        Int?
+  /// Solo para origen PLAN.
+  plan            PlanPago?      @relation("CuotasDelPlan", fields: [planId], references: [id])
+  planId          Int?
+  /// Número dentro del plan: 0 es el anticipo, de 1 en adelante las cuotas financiadas.
+  numeroEnPlan    Int?
+  /// Primer mes del período, 'AAAA-MM'. En un plan, el mes del vencimiento.
+  periodo         String         @db.VarChar(7)
+  /// Copia de la periodicidad de la tarifa: define qué meses abarca el período.
+  periodicidad    Periodicidad
+  /// Centavos, copiados de la tarifa al generar.
+  importe         Int
+  vencimiento     DateTime       @db.Date
+  estado          EstadoCuota    @default(PENDIENTE)
+  origen          OrigenCuota    @default(PARCELA)
+  anuladaEn       DateTime?
+  motivoAnulacion String?
+  detallesCobro   CobroDetalle[]
+  /// Los renglones de plan que se llevaron esta cuota. Normalmente uno, o más si un
+  /// plan anterior se canceló y la cuota se volvió a refinanciar.
+  refinanciadaEn  PlanDeudaOrigen[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([socioId, estado])
+  @@index([parcelaId, periodo])
+  @@index([estado, vencimiento])
+  @@index([asignacionId])
+  @@index([tarifaId])
+  @@index([planId])
+}
+
+enum MedioPago {
+  EFECTIVO
+  TRANSFERENCIA
+  TARJETA
+  CHEQUE
+  OTRO
+}
+
+/// Un cobro cancela una o varias cuotas del mismo socio y emite un único recibo.
+/// Registrarlo, marcar las cuotas y tomar el número de recibo ocurre en una sola transacción.
+model Cobro {
+  id              Int            @id @default(autoincrement())
+  socio           Socio          @relation(fields: [socioId], references: [id])
+  socioId         Int
+  fecha           DateTime       @db.Date
+  medio           MedioPago
+  /// Centavos. Siempre igual a la suma de los detalles.
+  total           Int
+  observaciones   String?
+  /// Quién registró el cobro.
+  usuario         Usuario        @relation("CobrosRegistrados", fields: [usuarioId], references: [id])
+  usuarioId       Int
+  anuladoEn       DateTime?
+  anuladoPor      Usuario?       @relation("CobrosAnulados", fields: [anuladoPorId], references: [id])
+  anuladoPorId    Int?
+  motivoAnulacion String?
+  detalles        CobroDetalle[]
+  recibo          Recibo?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([socioId, fecha])
+  @@index([fecha])
+  @@index([usuarioId])
+  @@index([anuladoPorId])
+}
+
+/// Una línea del cobro: qué cuota cancela y por cuánto.
+model CobroDetalle {
+  id      Int   @id @default(autoincrement())
+  cobro   Cobro @relation(fields: [cobroId], references: [id], onDelete: Cascade)
+  cobroId Int
+  cuota   Cuota @relation(fields: [cuotaId], references: [id])
+  cuotaId Int
+  /// Centavos imputados a la cuota. Hoy siempre su total: no se aceptan pagos parciales.
+  importe Int
+
+  @@unique([cobroId, cuotaId])
+  @@index([cuotaId])
+}
+
+/// Comprobante interno, no fiscal, con numeración correlativa propia.
+/// `datos` congela socio, cuotas e importes para poder reimprimirlo idéntico.
+model Recibo {
+  id        Int      @id @default(autoincrement())
+  numero    Int      @unique
+  cobro     Cobro    @relation(fields: [cobroId], references: [id], onDelete: Cascade)
+  cobroId   Int      @unique
+  emitidoEn DateTime @default(now())
+  datos     Json
+  anulado   Boolean  @default(false)
+}
+
+/// Contadores correlativos. Se incrementan dentro de la misma transacción que crea el
+/// comprobante: si algo falla, el número vuelve atrás y no queda ningún salteado.
+model Contador {
+  nombre String @id
+  valor  Int    @default(0)
+}
+
+/// Plan de pago de un socio moroso. Las cuotas elegidas quedan REFINANCIADAS y el plan
+/// genera cuotas nuevas con origen PLAN en su lugar.
+/// El estado vigente/cumplido/incumplido se calcula a partir de las cuotas, igual que
+/// «vencida»: acá solo se guarda la cancelación, que sí es una decisión de alguien.
+model PlanPago {
+  id                 Int               @id @default(autoincrement())
+  numero             Int               @unique
+  socio              Socio             @relation(fields: [socioId], references: [id])
+  socioId            Int
+  fecha              DateTime          @db.Date
+  /// Centavos: suma de las cuotas refinanciadas.
+  deudaTotal         Int
+  /// Centavos entregados al firmar. 0 si no hubo anticipo.
+  anticipo           Int               @default(0)
+  cantidadCuotas     Int
+  /// Cuántas cuotas vencidas impagas lo dan por incumplido.
+  toleranciaVencidas Int               @default(2)
+  observaciones      String?
+  usuario            Usuario           @relation("PlanesCreados", fields: [usuarioId], references: [id])
+  usuarioId          Int
+  canceladoEn        DateTime?
+  canceladoPor       Usuario?          @relation("PlanesCancelados", fields: [canceladoPorId], references: [id])
+  canceladoPorId     Int?
+  motivoCancelacion  String?
+  cuotas             Cuota[]           @relation("CuotasDelPlan")
+  origenes           PlanDeudaOrigen[]
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  @@index([socioId, fecha])
+  @@index([usuarioId])
+  @@index([canceladoPorId])
+}
+
+/// Cada cuota vieja que el plan absorbió, con el importe que tenía al refinanciarse.
+/// La unicidad es por plan, no global: si un plan se cancela, sus cuotas vuelven a
+/// pendiente y tienen que poder entrar en un plan nuevo, sin perder el registro del viejo.
+/// Que una cuota no esté en dos planes vivos a la vez lo garantiza su estado REFINANCIADA.
+model PlanDeudaOrigen {
+  id      Int      @id @default(autoincrement())
+  plan    PlanPago @relation(fields: [planId], references: [id], onDelete: Cascade)
+  planId  Int
+  cuota   Cuota    @relation(fields: [cuotaId], references: [id])
+  cuotaId Int
+  importe Int
+
+  @@unique([planId, cuotaId])
+  @@index([planId])
+  @@index([cuotaId])
+}
+
+/// Única fila (id = 1) con la configuración de los avisos de vencimiento.
+/// El remitente y el servidor salen del SMTP del entorno, no de acá.
+model ConfiguracionAvisos {
+  id             Int      @id @default(1)
+  activo         Boolean  @default(false)
+  /// Días antes del vencimiento para el aviso de próximo vencimiento.
+  diasAntes      Int      @default(5)
+  /// Días después del vencimiento para el aviso de cuota vencida. 0 lo desactiva.
+  diasDespues    Int      @default(3)
+  /// Hora de Argentina en la que corre el proceso.
+  horaEnvio      Int      @default(9)
+  remitenteNombre String?
+  /// Copia oculta al club, opcional.
+  copiaOculta    String?
+  asuntoProximo  String
+  cuerpoProximo  String
+  asuntoVencida  String
+  cuerpoVencida  String
+  /// Última corrida completada, para no repetirla el mismo día.
+  ultimaCorrida  DateTime? @db.Date
+  updatedAt      DateTime @updatedAt
+}
+
+/// Única fila (id = 1) con el interés por mora que se le carga a las cuotas impagas.
+/// No genera cuotas: el recargo se calcula al vuelo cada vez que se muestra la deuda y
+/// recién queda congelado en el detalle del cobro cuando el socio paga.
+/// `MENSUAL` suma el porcentaje cada mes que la cuota sigue impaga; `UNICO` lo aplica una
+/// sola vez, el primer día de aplicación después del vencimiento.
+enum ModoInteres {
+  MENSUAL
+  UNICO
+}
+
+model ConfiguracionInteres {
+  id            Int      @id @default(1)
+  activo        Boolean  @default(false)
+  modo          ModoInteres @default(MENSUAL)
+  /// Día del mes en que se aplica el recargo. Se recorta al último día del mes.
+  diaAplicacion Int      @default(10)
+  /// Porcentaje sobre el importe original de la cuota, con hasta dos decimales.
+  porcentaje    Decimal  @default(0) @db.Decimal(5, 2)
+  updatedAt     DateTime @updatedAt
+}
+
+enum TipoAviso {
+  PROXIMO_VENCIMIENTO
+  CUOTA_VENCIDA
+}
+
+enum ResultadoEnvio {
+  ENVIADO
+  FALLIDO
+  SIN_EMAIL
+}
+
+/// Un aviso por socio, tipo y día. Deja constancia de lo que se mandó, de lo que falló
+/// y de los socios sin email, que hay que contactar por otra vía.
+model EnvioAviso {
+  id        Int            @id @default(autoincrement())
+  socio     Socio          @relation(fields: [socioId], references: [id])
+  socioId   Int
+  tipo      TipoAviso
+  /// Día de la corrida que generó el aviso.
+  fecha     DateTime       @db.Date
+  email     String?
+  asunto    String
+  /// Las cuotas que el aviso lista. Se guardan para poder reintentarlo idéntico.
+  cuotaIds  Int[]
+  importe   Int
+  resultado ResultadoEnvio
+  error     String?
+  intentos  Int            @default(1)
+  enviadoEn DateTime?
+  createdAt DateTime       @default(now())
+
+  @@unique([socioId, tipo, fecha])
+  @@index([fecha])
+  @@index([resultado])
+}
+
+/// Cambio de titular de una parcela. El historial de asignaciones ya cuenta quién la tuvo
+/// y hasta cuándo; esto además vincula las dos puntas, y guarda el motivo y quién lo
+/// registró, que es lo que hace falta para auditar una transferencia de posesión.
+model Transferencia {
+  id                   Int        @id @default(autoincrement())
+  parcela              Parcela    @relation(fields: [parcelaId], references: [id])
+  parcelaId            Int
+  deSocio              Socio      @relation("TransferenciasCedidas", fields: [deSocioId], references: [id])
+  deSocioId            Int
+  aSocio               Socio      @relation("TransferenciasRecibidas", fields: [aSocioId], references: [id])
+  aSocioId             Int
+  /// La titularidad que se cerró y la que se abrió, cada una en una sola transferencia.
+  asignacionAnterior   Asignacion @relation("AsignacionCedida", fields: [asignacionAnteriorId], references: [id])
+  asignacionAnteriorId Int        @unique
+  asignacionNueva      Asignacion @relation("AsignacionRecibida", fields: [asignacionNuevaId], references: [id])
+  asignacionNuevaId    Int        @unique
+  fecha                DateTime   @db.Date
+  motivo               String?
+  usuario              Usuario    @relation(fields: [usuarioId], references: [id])
+  usuarioId            Int
+  createdAt            DateTime   @default(now())
+
+  @@index([parcelaId, fecha])
+  @@index([deSocioId])
+  @@index([aSocioId])
   @@index([usuarioId])
 }

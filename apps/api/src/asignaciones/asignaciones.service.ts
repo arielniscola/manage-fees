@@ -37,7 +37,12 @@ export class AsignacionesService {
     }
 
     try {
-      const a = await this.prisma.asignacion.create({ data: { socioId, parcelaId, desde: inicio } });
+      const a = await this.prisma.$transaction(async (tx) => {
+        const creada = await tx.asignacion.create({ data: { socioId, parcelaId, desde: inicio } });
+        // Recibir una parcela convierte al suplente en titular: deja la lista de espera.
+        if (socio.tipo === 'SUPLENTE') await tx.socio.update({ where: { id: socioId }, data: { tipo: 'TITULAR' } });
+        return creada;
+      });
       return { id: a.id, socioId, parcelaId, desde: deFecha(a.desde), hasta: null };
     } catch (e) {
       // Índice único parcial: otra operación asignó la parcela al mismo tiempo.

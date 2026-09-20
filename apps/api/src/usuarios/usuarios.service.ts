@@ -9,6 +9,7 @@ import { SesionesService } from '../auth/sesiones.service';
 const aListItem = (u: Usuario): UsuarioListItem => ({
   id: u.id,
   nombre: u.nombre,
+  username: u.username,
   email: u.email,
   rol: u.rol,
   debeCambiarPassword: u.debeCambiarPassword,
@@ -36,8 +37,7 @@ export class UsuariosService {
       });
       return aListItem(u);
     } catch (e) {
-      if (esDuplicado(e)) throw conflicto('Ya existe un usuario con ese email', 'email');
-      throw e;
+      throw traducirDuplicado(e);
     }
   }
 
@@ -50,8 +50,7 @@ export class UsuariosService {
     try {
       return aListItem(await this.prisma.usuario.update({ where: { id }, data }));
     } catch (e) {
-      if (esDuplicado(e)) throw conflicto('Ya existe un usuario con ese email', 'email');
-      throw e;
+      throw traducirDuplicado(e);
     }
   }
 
@@ -98,4 +97,13 @@ export class UsuariosService {
       throw conflicto('Tiene que quedar al menos un superadmin activo');
     }
   }
+}
+
+/** Distingue cuál de los dos campos únicos chocó, para señalar el correcto en el formulario. */
+function traducirDuplicado(e: unknown): unknown {
+  if (!esDuplicado(e)) return e;
+  const campos = String(e.meta?.target ?? '');
+  if (campos.includes('username')) return conflicto('Ya existe un usuario con ese nombre de usuario', 'username');
+  if (campos.includes('email')) return conflicto('Ya existe un usuario con ese email', 'email');
+  return conflicto('Ya existe un usuario con esos datos');
 }

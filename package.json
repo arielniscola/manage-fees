@@ -14,5 +14,8 @@
     "test": "npm run test -w @mf/shared",
     "db:migrate": "npm run db:migrate -w @mf/api",
     "db:seed": "npm run db:seed -w @mf/api"
+  },
+  "engines": {
+    "node": "22.x"
   }
 }

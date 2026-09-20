@@ -1,14 +1,18 @@
 import { Injectable } from '@nestjs/common';
 
-/** Por email se bloquea rápido; por IP se tolera más porque varias personas pueden compartir la conexión. */
-const MAX_FALLOS = { email: 5, ip: 30 } as const;
+/** Prefijos de las claves que arma el login. */
+export const CLAVE_USUARIO = 'usuario:';
+export const CLAVE_IP = 'ip:';
+
+/** Por usuario se bloquea rápido; por IP se tolera más porque varias personas pueden compartir la conexión. */
+const MAX_FALLOS = { usuario: 5, ip: 30 } as const;
 const VENTANA_MS = 15 * 60 * 1000;
 
-const maximo = (clave: string) => (clave.startsWith('ip:') ? MAX_FALLOS.ip : MAX_FALLOS.email);
+const maximo = (clave: string) => (clave.startsWith(CLAVE_IP) ? MAX_FALLOS.ip : MAX_FALLOS.usuario);
 
 /**
- * Limita los intentos fallidos de login por email y por IP.
- * Vive en memoria: alcanza para una sola instancia de la API.
+ * Limita los intentos fallidos de login por usuario y por IP.
+ * Vive en memoria: alcanza para una sola instancia de la API, y reiniciarla lo borra.
  */
 @Injectable()
 export class LimitadorLogin {
@@ -39,8 +43,8 @@ export class LimitadorLogin {
     }
   }
 
-  /** Tras un ingreso correcto se limpia solo el email: la IP conserva su conteo. */
+  /** Tras un ingreso correcto se limpia solo el usuario: la IP conserva su conteo. */
   limpiar(claves: string[]) {
-    for (const clave of claves) if (clave.startsWith('email:')) this.fallos.delete(clave);
+    for (const clave of claves) if (clave.startsWith(CLAVE_USUARIO)) this.fallos.delete(clave);
   }
 }

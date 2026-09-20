@@ -11,7 +11,7 @@ import { reglaIncumplida } from '../common/errores';
 import { ZodPipe } from '../common/zod.pipe';
 import { PrismaService } from '../prisma/prisma.module';
 import { PermitirPasswordPendiente, Publico, SesionActual, UsuarioActual } from './decorators';
-import { LimitadorLogin } from './limitador';
+import { CLAVE_IP, CLAVE_USUARIO, LimitadorLogin } from './limitador';
 import { hashPassword, verificarPassword } from './passwords';
 import { aUsuarioSesion, SesionesService } from './sesiones.service';
 
@@ -26,8 +26,8 @@ export class AuthController {
   @Publico()
   @Post('login')
   @HttpCode(200)
-  async login(@Body(new ZodPipe(loginSchema)) { email, password }: Login, @Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<UsuarioSesion> {
-    const claves = [`email:${email}`, `ip:${req.ip}`];
+  async login(@Body(new ZodPipe(loginSchema)) { username, password }: Login, @Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<UsuarioSesion> {
+    const claves = [`${CLAVE_USUARIO}${username}`, `${CLAVE_IP}${req.ip}`];
     const espera = this.limitador.bloqueado(claves);
     if (espera > 0) {
       throw new HttpException(
@@ -36,11 +36,13 @@ export class AuthController {
       );
     }
 
-    const usuario = await this.prisma.usuario.findUnique({ where: { email } });
+    const usuario = await this.prisma.usuario.findUnique({ where: { username } });
+    // El mismo mensaje para usuario inexistente, inactivo o contraseña mala: no conviene
+    // que desde afuera se pueda averiguar qué usuarios existen.
     const valida = await verificarPassword(usuario?.activo ? usuario.passwordHash : null, password);
     if (!usuario || !usuario.activo || !valida) {
       this.limitador.registrarFallo(claves);
-      throw reglaIncumplida('El email o la contraseña no son correctos');
+      throw reglaIncumplida('El usuario o la contraseña no son correctos');
     }
 
     this.limitador.limpiar(claves);

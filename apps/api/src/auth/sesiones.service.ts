@@ -13,6 +13,7 @@ const hashToken = (token: string) => createHash('sha256').update(token).digest('
 export const aUsuarioSesion = (u: Usuario): UsuarioSesion => ({
   id: u.id,
   nombre: u.nombre,
+  username: u.username,
   email: u.email,
   rol: u.rol,
   debeCambiarPassword: u.debeCambiarPassword,
