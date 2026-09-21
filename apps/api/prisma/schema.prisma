@@ -257,6 +257,8 @@ model Cuota {
   vencimiento     DateTime       @db.Date
   estado          EstadoCuota    @default(PENDIENTE)
   origen          OrigenCuota    @default(PARCELA)
+  /// La creó un pago adelantado: no existía hasta que el socio vino a pagarla.
+  adelantada      Boolean        @default(false)
   anuladaEn       DateTime?
   motivoAnulacion String?
   detallesCobro   CobroDetalle[]
@@ -437,6 +439,21 @@ model ConfiguracionInteres {
   /// Porcentaje sobre el importe original de la cuota, con hasta dos decimales.
   porcentaje    Decimal  @default(0) @db.Decimal(5, 2)
   updatedAt     DateTime @updatedAt
+}
+
+/// Única fila (id = 1) con las reglas para adelantar cuotas al registrar un pago.
+/// Las cuotas futuras no existen hasta que alguien las adelanta: se crean y se cobran en
+/// el mismo acto, así que nunca figuran como deuda del socio sin estar pagas.
+model ConfiguracionAdelanto {
+  id           Int      @id @default(1)
+  activo       Boolean  @default(true)
+  /// Cuántos meses hacia adelante se puede llegar como mucho.
+  mesesMaximos Int      @default(12)
+  /// Descuento por pago adelantado, en porcentaje sobre el importe de cada cuota adelantada.
+  descuento    Decimal  @default(0) @db.Decimal(5, 2)
+  /// Meses de adelanto a partir de los cuales corresponde el descuento.
+  minimoMeses  Int      @default(1)
+  updatedAt    DateTime @updatedAt
 }
 
 enum TipoAviso {

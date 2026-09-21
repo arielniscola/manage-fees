@@ -149,6 +149,8 @@ export interface CuotaListItem {
   vencimiento: string;
   estado: EstadoCuotaVisible;
   origen: OrigenCuota;
+  /** La creó un pago adelantado: no existía hasta que el socio vino a pagarla. */
+  adelantada: boolean;
   /** Días transcurridos desde el vencimiento; 0 si todavía no venció. */
   diasVencida: number;
   /**

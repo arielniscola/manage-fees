@@ -151,9 +151,15 @@ function tabla(doc: Doc, datos: DatosRecibo) {
   doc.font('Helvetica').fontSize(10).fillColor(TINTA);
   for (const d of datos.detalles) {
     const alto = 21;
-    // El interés por mora no es un renglón aparte: viaja dentro del importe de su cuota,
-    // y se aclara al lado del concepto para que el socio vea de dónde sale la diferencia.
-    const concepto = d.interes ? `${d.concepto} (incluye ${pesos(d.interes)} de interés)` : d.concepto;
+    // Ni el interés por mora ni el descuento por adelantar son un renglón aparte: viajan
+    // dentro del importe de su cuota, y se aclaran al lado del concepto para que el socio
+    // vea de dónde sale la diferencia.
+    const aclaracion = d.interes
+      ? ` (incluye ${pesos(d.interes)} de interés)`
+      : d.descuento
+        ? ` (con ${pesos(d.descuento)} de descuento)`
+        : '';
+    const concepto = `${d.concepto}${aclaracion}`;
     doc.text(concepto, MARGEN + 8, y + 6, { width: COL_CONCEPTO - 8, lineBreak: false, ellipsis: true });
     doc.text(d.parcela, MARGEN + 8 + COL_CONCEPTO, y + 6, { width: COL_PARCELA - 8, lineBreak: false });
     doc.text(fechaLegible(d.vencimiento), MARGEN + 8 + COL_CONCEPTO + COL_PARCELA, y + 6, { width: COL_VENCE - 8, lineBreak: false });

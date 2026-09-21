@@ -125,7 +125,10 @@ function GruposDeCuotas({ grupos, limite }: { grupos: Grupo[]; limite?: number }
             <tbody>
               {cuotas.slice(0, limite).map((c) => (
                 <tr key={c.id}>
-                  <Td className="font-medium first-letter:uppercase">{c.etiqueta}</Td>
+                  <Td className="font-medium first-letter:uppercase">
+                    {c.etiqueta}
+                    {c.adelantada && <span className="ml-1.5 text-xs font-normal normal-case text-tenue">(adelantada)</span>}
+                  </Td>
                   <Td className="tabular text-tenue">Vence {fecha(c.vencimiento)}</Td>
                   <Td className="text-right tabular">
                     {pesos(c.importe + c.interes)}

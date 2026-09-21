@@ -100,7 +100,10 @@ export function CobroDetalleDialog({ cobroId, onCerrar }: { cobroId: number | nu
                 <tbody>
                   {cobro.cuotas.map((c) => (
                     <tr key={c.cuotaId}>
-                      <Td className="first-letter:uppercase">{c.etiqueta}</Td>
+                      <Td className="first-letter:uppercase">
+                        {c.etiqueta}
+                        {c.adelantada && <span className="ml-1.5 text-xs normal-case text-tenue">(adelantada)</span>}
+                      </Td>
                       <Td className="font-semibold tabular">{c.parcela?.etiqueta ?? <span className="font-normal text-tenue">Plan de pago</span>}</Td>
                       <Td className="tabular text-tenue">{fecha(c.vencimiento)}</Td>
                       <Td className="text-right tabular">{pesos(c.importe)}</Td>

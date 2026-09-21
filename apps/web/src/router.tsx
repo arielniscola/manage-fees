@@ -6,6 +6,7 @@ import { LoginPage } from './features/auth/LoginPage';
 import { ConfiguracionAvisosPage } from './features/avisos/ConfiguracionAvisosPage';
 import { HistorialEnviosPage } from './features/avisos/HistorialEnviosPage';
 import { CobrosPage } from './features/cobros/CobrosPage';
+import { AdelantoPage } from './features/configuracion/AdelantoPage';
 import { ConfiguracionPage } from './features/configuracion/ConfiguracionPage';
 import { InteresPage } from './features/configuracion/InteresPage';
 import { PanelPage } from './features/panel/PanelPage';
@@ -46,6 +47,7 @@ export const router = createBrowserRouter([
           { path: 'configuracion', element: <ConfiguracionPage /> },
           { path: 'configuracion/cuota', element: <ConfiguracionCuotaPage /> },
           { path: 'configuracion/interes', element: <InteresPage /> },
+          { path: 'configuracion/adelanto', element: <AdelantoPage /> },
           { path: 'configuracion/avisos', element: <ConfiguracionAvisosPage /> },
           { path: 'configuracion/avisos/envios', element: <HistorialEnviosPage /> },
           // Los avisos vivían sueltos en el menú; los links viejos siguen funcionando.

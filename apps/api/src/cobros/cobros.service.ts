@@ -18,9 +18,13 @@ import { aFecha, deFecha } from '../common/fechas';
 import { cobrosDelLoteo } from '../common/loteo';
 import { aParcelaUbicada, parcelaResumen } from '../common/parcela';
 import { InteresService } from '../configuracion/interes.service';
+import { AdelantosService } from '../cuotas/adelantos.service';
 import { PrismaService } from '../prisma/prisma.module';
 
 const NOMBRE_CLUB = process.env.CLUB_NOMBRE || 'Club';
+
+/** Tope de renglones de un recibo, ya sean cuotas tildadas o adelantadas. */
+const MAX_CUOTAS_POR_COBRO = 120;
 
 const completo = {
   socio: { select: { id: true, numero: true, nombre: true, apellido: true } },
@@ -48,6 +52,7 @@ export class CobrosService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly interes: InteresService,
+    private readonly adelantos: AdelantosService,
   ) {}
 
   async listar({ q, socioId, parcelaId, desde, hasta, medio, estado, loteoId, page, pageSize }: CobroListar): Promise<CobrosPaginados> {
@@ -106,9 +111,12 @@ export class CobrosService {
   /**
    * Registra el pago de una o varias cuotas y emite el recibo, todo en una sola transacción:
    * nunca queda un recibo sin cuotas, ni una cuota pagada sin recibo, ni un número salteado.
+   *
+   * Si el cobro adelanta cuotas, las futuras se crean acá adentro y se cobran en el mismo
+   * recibo: o quedan creadas y pagas, o no queda ninguna.
    */
   async registrar(usuario: UsuarioSesion, datos: CobroCrear): Promise<CobroDetalle> {
-    const cuotaIds = [...new Set(datos.cuotaIds)];
+    const elegidas = [...new Set(datos.cuotaIds)];
     // El interés se calcula al vuelo, así que se congela acá: lo que se cobra hoy es lo
     // que queda escrito en el detalle y en el recibo, aunque mañana el recargo sea otro.
     const hoyISO = hoy();
@@ -117,6 +125,17 @@ export class CobrosService {
     const id = await this.prisma.$transaction(async (tx) => {
       const socio = await tx.socio.findUnique({ where: { id: datos.socioId } });
       if (!socio) throw noEncontrado('No existe el socio');
+
+      // Las adelantadas nacen acá: si algo falla más abajo, la transacción las borra.
+      const adelanto = datos.adelantarHasta
+        ? await this.adelantos.preparar(tx, datos.socioId, datos.adelantarHasta, datos.adelantarExcepto)
+        : null;
+      const cuotaIds = [...elegidas, ...(adelanto?.ids ?? [])];
+      // Puede quedar vacío si el cobro era solo un adelanto y se sacaron todos los renglones.
+      if (cuotaIds.length === 0) throw reglaIncumplida('Elegí al menos una cuota', 'cuotaIds');
+      if (cuotaIds.length > MAX_CUOTAS_POR_COBRO) {
+        throw reglaIncumplida(`Son demasiadas cuotas para un solo recibo (${cuotaIds.length})`, 'cuotaIds');
+      }
 
       const cuotas = await tx.cuota.findMany({
         where: { id: { in: cuotaIds } },
@@ -153,7 +172,11 @@ export class CobrosService {
       }
 
       const recargo = new Map(cuotas.map((c) => [c.id, interesDeCuota({ ...c, vencimiento: deFecha(c.vencimiento) }, config, hoyISO)]));
-      const cobrado = (c: { id: number; importe: number }) => c.importe + (recargo.get(c.id) ?? 0);
+      // El descuento por pago adelantado ya viene calculado sobre el importe de cada
+      // cuota creada; al recibo va restado, igual que el interés va sumado.
+      const descuento = adelanto?.descuentos ?? new Map<number, number>();
+      const cobrado = (c: { id: number; importe: number }) =>
+        c.importe + (recargo.get(c.id) ?? 0) - (descuento.get(c.id) ?? 0);
       const total = cuotas.reduce((t, c) => t + cobrado(c), 0);
       const cobro = await tx.cobro.create({
         data: {
@@ -185,11 +208,12 @@ export class CobrosService {
         observaciones: datos.observaciones,
         detalles: cuotas.map((c) => ({
           // La social ya se nombra sola; la de parcela se aclara, porque su concepto es el período.
-          concepto: c.origen === 'PARCELA' ? `Cuota de parcela ${concepto(c)}` : concepto(c),
+          concepto: `${c.origen === 'PARCELA' ? `Cuota de parcela ${concepto(c)}` : concepto(c)}${c.adelantada ? ' (adelantada)' : ''}`,
           parcela: c.parcela ? aParcelaUbicada(c.parcela).etiqueta : '—',
           vencimiento: deFecha(c.vencimiento),
           importe: cobrado(c),
           interes: recargo.get(c.id) || undefined,
+          descuento: descuento.get(c.id) || undefined,
         })),
         total,
         registradoPor: usuario.nombre,
@@ -207,6 +231,11 @@ export class CobrosService {
   /**
    * Anula un cobro mal cargado: el recibo queda marcado como anulado y sus cuotas
    * vuelven a pendiente. No se borra nada, para que el número de recibo siga existiendo.
+   *
+   * Las adelantadas también vuelven a pendiente, aunque las haya creado este cobro: son
+   * períodos que el socio va a deber igual, solo que se generaron antes de tiempo. No se
+   * borran ni se anulan porque el período quedaría sin cuota para siempre —el índice
+   * único no deja generarla de nuevo— y el club la perdería.
    */
   async anular(id: number, usuario: UsuarioSesion, { motivo }: CobroAnular): Promise<CobroDetalle> {
     await this.prisma.$transaction(async (tx) => {
@@ -301,6 +330,7 @@ export class CobrosService {
         parcela: d.cuota.parcela && aParcelaUbicada(d.cuota.parcela),
         vencimiento: deFecha(d.cuota.vencimiento),
         importe: d.importe,
+        adelantada: d.cuota.adelantada,
       })),
     };
   }

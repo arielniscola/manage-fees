@@ -4,7 +4,9 @@ import {
   hoy,
   inicioPeriodo,
   MESES_DE,
+  mesActual,
   mesDe,
+  primerDia,
   sumarMeses,
   vencimientoDe,
   type AlcanceTarifa,
@@ -21,11 +23,14 @@ import { mesVigencia } from './tarifas.service';
  * La generación crea las cuotas del período: una por cada parcela asignada, que es el pago
  * por la propiedad del terreno, y una cuota social por socio. Las de plan no se generan acá.
  */
-type Candidata = Prisma.CuotaCreateManyInput & {
+export type Candidata = Prisma.CuotaCreateManyInput & {
   periodo: string;
   periodicidad: Periodicidad;
   origen: 'PARCELA' | 'SOCIO';
 };
+
+/** La generación también corre dentro de la transacción de un cobro adelantado. */
+type Cliente = Prisma.TransactionClient;
 
 /** Tope defensivo por asignación: sin él, una fecha disparatada podría generar millones de filas. */
 const MAX_PERIODOS = 600;
@@ -55,8 +60,8 @@ export class GeneracionService {
       return { hasta, simulado: simular, periodos: [], cuotas: 0, importe: 0, socios: 0, yaExistian: 0, sinTarifa: true };
     }
 
-    const candidatas = await this.calcular(porAlcance, hasta);
-    const existentes = await this.clavesExistentes(candidatas);
+    const candidatas = await this.calcular(porAlcance, hasta, this.prisma);
+    const existentes = await this.clavesExistentes(candidatas, this.prisma);
     const nuevas = candidatas.filter((c) => !existentes.has(clave(c)));
 
     if (!simular && nuevas.length > 0) {
@@ -84,11 +89,40 @@ export class GeneracionService {
     return resultado;
   }
 
-  private async calcular(tarifas: Record<AlcanceTarifa, Tarifa[]>, hasta: string): Promise<Candidata[]> {
+  /**
+   * Las cuotas que le faltan a un socio para quedar pago hasta un mes futuro, ya
+   * descontadas las que existen. No escribe nada: quien adelanta las crea dentro de su
+   * propia transacción, junto con el cobro que las cancela.
+   *
+   * Solo mira los períodos que empiezan después del mes en curso: el período actual lo
+   * genera la corrida de todos los días, y su titular puede no ser el mismo que hoy.
+   */
+  async candidatasDeSocio(socioId: number, hastaMes: string, db: Cliente = this.prisma): Promise<Candidata[]> {
+    const tarifas = await db.tarifa.findMany({ orderBy: { vigenteDesde: 'asc' } });
+    if (tarifas.length === 0) return [];
+
+    const porAlcance = {
+      PARCELA: tarifas.filter((t) => t.alcance === 'PARCELA'),
+      SOCIO: tarifas.filter((t) => t.alcance === 'SOCIO'),
+    };
+    const desde = mesActual();
+    const candidatas = (await this.calcular(porAlcance, primerDia(hastaMes), db, socioId)).filter(
+      (c) => c.periodo > desde && c.socioId === socioId,
+    );
+    const existentes = await this.clavesExistentes(candidatas, db);
+    return candidatas.filter((c) => !existentes.has(clave(c))).sort((a, b) => a.periodo.localeCompare(b.periodo));
+  }
+
+  private async calcular(
+    tarifas: Record<AlcanceTarifa, Tarifa[]>,
+    hasta: string,
+    db: Cliente,
+    socioId?: number,
+  ): Promise<Candidata[]> {
     const limite = mesDe(hasta);
 
-    const asignaciones = await this.prisma.asignacion.findMany({
-      where: { desde: { lte: aFecha(hasta) } },
+    const asignaciones = await db.asignacion.findMany({
+      where: { desde: { lte: aFecha(hasta) }, ...(socioId && { socioId }) },
       select: { id: true, socioId: true, parcelaId: true, desde: true, hasta: true },
       // La más vieja primero: si una parcela cambió de titular dentro del período,
       // la cuota queda a nombre de quien era titular cuando el período empezó.
@@ -209,7 +243,7 @@ export class GeneracionService {
     return elegida;
   }
 
-  private async clavesExistentes(candidatas: Candidata[]): Promise<Set<string>> {
+  private async clavesExistentes(candidatas: Candidata[], db: Cliente): Promise<Set<string>> {
     if (candidatas.length === 0) return new Set();
     const desde = candidatas.reduce((min, c) => (c.periodo < min ? c.periodo : min), candidatas[0].periodo);
     const parcelaIds = [...new Set(candidatas.flatMap((c) => (c.parcelaId ? [c.parcelaId] : [])))];
@@ -218,13 +252,13 @@ export class GeneracionService {
     // Cuentan también las anuladas y las refinanciadas: ya ocupan el lugar del período.
     const [deParcela, sociales] = await Promise.all([
       parcelaIds.length
-        ? this.prisma.cuota.findMany({
+        ? db.cuota.findMany({
             where: { origen: 'PARCELA', parcelaId: { in: parcelaIds }, periodo: { gte: desde } },
             select: { parcelaId: true, periodo: true },
           })
         : [],
       socioIds.length
-        ? this.prisma.cuota.findMany({
+        ? db.cuota.findMany({
             where: { origen: 'SOCIO', socioId: { in: socioIds }, periodo: { gte: desde } },
             select: { socioId: true, periodo: true },
           })

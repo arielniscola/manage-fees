@@ -1,22 +1,28 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, Download, FileText, Search } from 'lucide-react';
+import { CheckCircle2, Download, FastForward, FileText, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   ETIQUETA_MEDIO_PAGO,
   MEDIOS_PAGO,
+  etiquetaPeriodo,
   hoy,
+  mesActual,
   numeroRecibo,
   pesos,
+  sumarMeses,
+  totalesDeAdelanto,
   type CobroDetalle,
   type CuotaListItem,
   type MedioPago,
+  type ResultadoAdelanto,
   type SocioResumen,
 } from '@mf/shared';
 import { Button } from '@/components/ui/button';
 import { Avatar, Badge } from '@/components/ui/display';
 import { Dialog } from '@/components/ui/dialog';
 import { Field, Input, Select, Textarea } from '@/components/ui/field';
-import { useCuotasDeSocio } from '@/features/cuotas/api';
+import { useConfiguracionAdelanto } from '@/features/configuracion/api';
+import { useAdelantoPrevio, useCuotasDeSocio } from '@/features/cuotas/api';
 import { BadgeCuota } from '@/features/cuotas/estados';
 import { useSocios } from '@/features/socios/api';
 import { ApiError } from '@/lib/api';
@@ -193,9 +199,25 @@ function FormularioDeCobro({
   const [medio, setMedio] = useState<MedioPago>('EFECTIVO');
   const [fechaCobro, setFechaCobro] = useState(hoy);
   const [observaciones, setObservaciones] = useState('');
+  // Meses que el socio se lleva pagos por adelantado. 0 = no adelanta nada.
+  const [mesesAdelanto, setMesesAdelanto] = useState(0);
+  // Renglones del adelanto que quedan afuera, por su clave: la social de un mes, la de
+  // una parcela. Se vacía al cambiar de mes, porque la lista es otra.
+  const [excluidas, setExcluidas] = useState<string[]>([]);
   const registrar = useRegistrarCobro();
 
   const { data, isPending, isError, error } = useCuotasDeSocio(socio.id, 'impaga', { enabled: abierto });
+  const { data: reglas } = useConfiguracionAdelanto();
+  const puedeAdelantar = !!reglas?.activo && reglas.mesesMaximos > 0;
+  const adelantarHasta = mesesAdelanto > 0 ? sumarMeses(mesActual(), mesesAdelanto) : null;
+  const adelanto = useAdelantoPrevio(socio.id, adelantarHasta, { enabled: abierto && puedeAdelantar });
+  const previo = mesesAdelanto > 0 ? (adelanto.data ?? null) : null;
+  const adelantado = totalesDeAdelanto(previo?.cuotas ?? [], excluidas);
+
+  const elegirMeses = (n: number) => {
+    setMesesAdelanto(n);
+    setExcluidas([]);
+  };
 
   // De la más vieja a la más nueva: primero se cancela la deuda más antigua.
   const impagas = useMemo(
@@ -211,16 +233,30 @@ function FormularioDeCobro({
     setMedio('EFECTIVO');
     setFechaCobro(hoy());
     setObservaciones('');
+    setMesesAdelanto(0);
+    setExcluidas([]);
   }, [socio.id]);
 
   // Lo que se cobra es el importe más el interés por mora acumulado hasta hoy: el
   // servidor vuelve a calcularlo al registrar el pago y tiene que dar lo mismo.
-  const total = impagas.filter((c) => seleccion.includes(c.id)).reduce((t, c) => t + c.importe + c.interes, 0);
+  const deuda = impagas.filter((c) => seleccion.includes(c.id)).reduce((t, c) => t + c.importe + c.interes, 0);
+  // Las adelantadas todavía no existen: su importe lo calcula el servidor en la vista
+  // previa y lo vuelve a calcular al cobrar, así que tiene que dar lo mismo.
+  const total = deuda + adelantado.total;
+  const cantidad = seleccion.length + adelantado.cantidad;
   const alternar = (id: number) => setSeleccion((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
 
   const enviar = () =>
     registrar.mutate(
-      { socioId: socio.id, fecha: fechaCobro, medio, cuotaIds: seleccion, observaciones: observaciones || null },
+      {
+        socioId: socio.id,
+        fecha: fechaCobro,
+        medio,
+        cuotaIds: seleccion,
+        adelantarHasta: adelantado.cantidad > 0 ? adelantarHasta : null,
+        adelantarExcepto: excluidas,
+        observaciones: observaciones || null,
+      },
       {
         onSuccess: (cobro) => {
           toast.success(`Recibo N° ${numeroRecibo(cobro.numeroRecibo)} emitido`);
@@ -252,12 +288,15 @@ function FormularioDeCobro({
       pie={
         <div className="flex flex-1 items-center justify-between gap-4">
           <span className="text-sm text-tenue">
-            {seleccion.length === 0 ? (
+            {cantidad === 0 ? (
               'Elegí las cuotas a cobrar'
             ) : (
               <>
-                {plural(seleccion.length, 'cuota')} ·{' '}
-                <span className="font-serif text-xl font-medium tabular text-tinta">{pesos(total)}</span>
+                {plural(cantidad, 'cuota')}
+                {adelantado.descuento > 0 && (
+                  <span className="text-ok"> · −{pesos(adelantado.descuento)} de descuento</span>
+                )}{' '}
+                · <span className="font-serif text-xl font-medium tabular text-tinta">{pesos(total)}</span>
               </>
             )}
           </span>
@@ -265,7 +304,7 @@ function FormularioDeCobro({
             <Button variante="secundario" onClick={() => onAbiertoChange(false)}>
               Cancelar
             </Button>
-            <Button cargando={registrar.isPending} disabled={seleccion.length === 0} onClick={enviar}>
+            <Button cargando={registrar.isPending} disabled={cantidad === 0 || adelanto.isFetching} onClick={enviar}>
               Cobrar y emitir recibo
             </Button>
           </div>
@@ -287,6 +326,21 @@ function FormularioDeCobro({
             seleccion={seleccion}
             onAlternar={alternar}
             onTodas={() => setSeleccion(seleccion.length === impagas.length ? [] : impagas.map((c) => c.id))}
+          />
+        )}
+
+        {puedeAdelantar && (
+          <Adelanto
+            meses={mesesAdelanto}
+            onMeses={elegirMeses}
+            mesesMaximos={reglas.mesesMaximos}
+            previo={previo}
+            excluidas={excluidas}
+            onAlternar={(clave) =>
+              setExcluidas((e) => (e.includes(clave) ? e.filter((x) => x !== clave) : [...e, clave]))
+            }
+            cargando={adelanto.isFetching}
+            error={adelanto.isError ? adelanto.error.message : null}
           />
         )}
 
@@ -366,6 +420,128 @@ function TablaDeCuotas({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Adelantar cuotas: el socio se lleva pagos los períodos que todavía no se generaron.
+ * La vista previa la calcula el servidor —acá no se inventan importes— y las cuotas
+ * recién nacen cuando se registra el cobro.
+ */
+function Adelanto({
+  meses,
+  onMeses,
+  mesesMaximos,
+  previo,
+  excluidas,
+  onAlternar,
+  cargando,
+  error,
+}: {
+  meses: number;
+  onMeses: (n: number) => void;
+  mesesMaximos: number;
+  previo: ResultadoAdelanto | null;
+  excluidas: string[];
+  onAlternar: (clave: string) => void;
+  cargando: boolean;
+  error: string | null;
+}) {
+  const desde = mesActual();
+  const opciones = Array.from({ length: mesesMaximos }, (_, i) => i + 1);
+  const incluido = totalesDeAdelanto(previo?.cuotas ?? [], excluidas);
+
+  return (
+    <div className="flex flex-col gap-3 rounded-control border border-borde px-4 py-3.5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <span className="flex items-center gap-2 text-[13px] font-semibold [&_svg]:size-4 [&_svg]:text-pino-600">
+          <FastForward strokeWidth={1.8} /> Adelantar cuotas
+        </span>
+        <label className="flex items-center gap-2 text-[13px] text-tenue" htmlFor="adelantar-hasta">
+          Dejar pago hasta
+          <Select
+            id="adelantar-hasta"
+            value={meses}
+            onChange={(e) => onMeses(Number(e.target.value))}
+            className="h-9 w-auto min-w-[168px] text-sm"
+          >
+            <option value={0}>No adelantar</option>
+            {opciones.map((n) => (
+              <option key={n} value={n}>
+                {etiquetaPeriodo(sumarMeses(desde, n), 'MENSUAL')}
+              </option>
+            ))}
+          </Select>
+        </label>
+      </div>
+
+      {meses === 0 ? (
+        <p className="text-[13px] text-tenue">
+          Las cuotas de los períodos que todavía no se generaron se crean y se cobran en este mismo recibo.
+        </p>
+      ) : error ? (
+        <p className="text-[13px] text-mor">{error}</p>
+      ) : cargando || !previo ? (
+        <p className="text-[13px] text-tenue">Calculando las cuotas a adelantar…</p>
+      ) : previo.cuotas.length === 0 ? (
+        <p className="text-[13px] text-tenue">
+          No hay nada para adelantar hasta ese mes: esas cuotas ya están generadas y figuran arriba.
+        </p>
+      ) : (
+        <>
+          <div className="max-h-[168px] overflow-y-auto rounded-control bg-superficie-2">
+            {previo.cuotas.map((c) => {
+              const fuera = excluidas.includes(c.clave);
+              return (
+                <label
+                  key={c.clave}
+                  className={`flex cursor-pointer items-center gap-3 border-b border-borde px-3 py-2 text-sm last:border-b-0 ${fuera ? 'text-tenue line-through decoration-borde' : ''}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={!fuera}
+                    onChange={() => onAlternar(c.clave)}
+                    className="size-4 accent-pino-600"
+                  />
+                  <span className="w-[74px] shrink-0 font-semibold tabular">
+                    {c.parcela?.etiqueta ?? <span className="font-normal text-tenue">Social</span>}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate first-letter:uppercase">{c.etiqueta}</span>
+                  <span className="w-[92px] shrink-0 tabular text-tenue">{fecha(c.vencimiento)}</span>
+                  <span className="flex w-[110px] shrink-0 flex-col items-end tabular">
+                    <span>{pesos(c.importe - c.descuento)}</span>
+                    {c.descuento > 0 && <span className="text-xs text-tenue no-underline">antes {pesos(c.importe)}</span>}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+          <p className="text-[13px] text-tenue">
+            {incluido.cantidad === 0 ? (
+              'Sacaste todas: no se adelanta ninguna cuota.'
+            ) : (
+              <>
+                {plural(incluido.cantidad, 'cuota')} de {plural(previo.meses, 'mes', 'meses')}
+                {previo.conDescuento ? (
+                  <>
+                    {' '}
+                    · <span className="font-semibold text-ok">{previo.porcentaje} % de descuento</span> (−
+                    {pesos(incluido.descuento)})
+                  </>
+                ) : previo.porcentaje > 0 ? (
+                  <> · el descuento corresponde desde los {previo.minimoMeses} meses</>
+                ) : null}{' '}
+                · <span className="font-semibold text-tinta tabular">{pesos(incluido.total)}</span>
+              </>
+            )}
+          </p>
+          <p className="text-[13px] text-tenue">
+            Destildá la que no quiera pagar —la social de un mes, la de una parcela—: esa se va a generar como
+            siempre cuando llegue su período.
+          </p>
+        </>
+      )}
     </div>
   );
 }

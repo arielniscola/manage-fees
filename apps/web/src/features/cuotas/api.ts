@@ -1,5 +1,6 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
+  AdelantoPrevioInput,
   AlcanceTarifa,
   CuotaAnularInput,
   CuotaListarInput,
@@ -7,6 +8,7 @@ import type {
   CuotaListItem,
   GenerarCuotasInput,
   Paginado,
+  ResultadoAdelanto,
   ResultadoGeneracion,
   Tarifa,
   TarifaActualizarInput,
@@ -18,6 +20,7 @@ export const clavesCuotas = {
   todas: ['cuotas'] as const,
   lista: (f: CuotaListarInput) => ['cuotas', 'lista', f] as const,
   deSocio: (socioId: number, estado: string) => ['cuotas', 'socio', socioId, estado] as const,
+  adelanto: (socioId: number, hasta: string) => ['cuotas', 'socio', socioId, 'adelanto', hasta] as const,
   tarifas: ['tarifas'] as const,
 };
 
@@ -50,6 +53,18 @@ export function useCuotasDeSocio(
     queryKey: clavesCuotas.deSocio(socioId, estado ?? 'todas'),
     queryFn: () => api.get<CuotaListItem[]>(`/socios/${socioId}/cuotas`, { estado }),
     enabled: (opciones?.enabled ?? true) && !!socioId,
+  });
+}
+
+/**
+ * Vista previa del adelanto: qué cuotas futuras habría que crear para dejar al socio pago
+ * hasta ese mes y cuánto sale. No escribe nada; se crean al registrar el cobro.
+ */
+export function useAdelantoPrevio(socioId: number, hasta: string | null, opciones?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: clavesCuotas.adelanto(socioId, hasta ?? ''),
+    queryFn: () => api.get<ResultadoAdelanto>(`/socios/${socioId}/cuotas/adelanto`, { hasta } as AdelantoPrevioInput),
+    enabled: (opciones?.enabled ?? true) && !!socioId && !!hasta,
   });
 }
 

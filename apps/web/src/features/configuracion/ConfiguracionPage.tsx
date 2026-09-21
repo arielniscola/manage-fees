@@ -1,12 +1,12 @@
 import { Link } from 'react-router';
-import { Bell, CalendarClock, ChevronRight, Percent } from 'lucide-react';
+import { Bell, CalendarClock, ChevronRight, FastForward, Percent } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { ETIQUETA_ALCANCE, pesos } from '@mf/shared';
 import { Card, ErrorCarga } from '@/components/ui/display';
 import { Encabezado } from '@/layout/AppLayout';
 import { useConfiguracionAvisos } from '@/features/avisos/api';
 import { useTarifas } from '@/features/cuotas/api';
-import { useConfiguracionInteres } from './api';
+import { useConfiguracionAdelanto, useConfiguracionInteres } from './api';
 
 /**
  * Índice de la configuración del club: lo que se define una vez y después rige para todo.
@@ -15,11 +15,12 @@ import { useConfiguracionInteres } from './api';
 export function ConfiguracionPage() {
   const avisos = useConfiguracionAvisos();
   const interes = useConfiguracionInteres();
+  const adelanto = useConfiguracionAdelanto();
   const tarifas = useTarifas();
 
   // Hay una tarifa vigente por cuota: la social y la de parcela.
   const vigentes = (tarifas.data ?? []).filter((t) => t.vigente);
-  const error = avisos.error ?? interes.error ?? tarifas.error;
+  const error = avisos.error ?? interes.error ?? adelanto.error ?? tarifas.error;
 
   return (
     <>
@@ -31,6 +32,7 @@ export function ConfiguracionPage() {
           onReintentar={() => {
             void avisos.refetch();
             void interes.refetch();
+            void adelanto.refetch();
             void tarifas.refetch();
           }}
         />
@@ -59,6 +61,23 @@ export function ConfiguracionPage() {
                     ? `${interes.data.porcentaje} % una sola vez, el día ${interes.data.diaAplicacion}`
                     : `${interes.data.porcentaje} % el día ${interes.data.diaAplicacion} de cada mes`
                   : 'Apagado: las cuotas vencidas no acumulan recargo'
+                : undefined
+            }
+          />
+          <Opcion
+            a="/configuracion/adelanto"
+            icono={FastForward}
+            titulo="Pagos adelantados"
+            descripcion="Hasta cuántos meses puede pagar por adelantado un socio y qué descuento lleva. Las cuotas futuras se crean recién cuando las paga."
+            estado={
+              adelanto.data
+                ? adelanto.data.activo
+                  ? `Hasta ${adelanto.data.mesesMaximos} meses${
+                      adelanto.data.descuento > 0
+                        ? ` · ${adelanto.data.descuento} % desde los ${adelanto.data.minimoMeses} meses`
+                        : ' · sin descuento'
+                    }`
+                  : 'Apagado: no se pueden adelantar cuotas'
                 : undefined
             }
           />
