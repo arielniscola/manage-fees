@@ -9,19 +9,15 @@ import {
   type ParcelaImportada,
   type ResultadoImportacion,
 } from '@mf/shared';
-import ExcelJS from 'exceljs';
 import { conflicto, noEncontrado, reglaIncumplida } from '../common/errores';
 import { aFecha } from '../common/fechas';
+import { leerPlanilla, type ArchivoSubido } from '../common/planilla';
 import { PrismaService } from '../prisma/prisma.module';
+
+export type { ArchivoSubido };
 
 /** Tope defensivo: un padrón de club no llega ni cerca y evita comerse la memoria. */
 const MAX_FILAS = 5000;
-
-export interface ArchivoSubido {
-  originalname: string;
-  buffer: Buffer;
-  size: number;
-}
 
 /** Una parcela que ya está en la base. */
 interface ParcelaExistente {
@@ -159,7 +155,7 @@ export class ImportacionService {
   }
 
   private async analizar(archivo: ArchivoSubido, loteoId?: number) {
-    const { encabezados, filas } = await this.leer(archivo);
+    const { encabezados, filas } = await leerPlanilla(archivo, MAX_FILAS);
     const analisis = analizarFilas(encabezados, filas);
     const ubicar = await this.ubicador(loteoId);
     if (analisis.columnasFaltantes.length > 0) return { resultado: analisis, ubicar };
@@ -368,107 +364,6 @@ export class ImportacionService {
     return new Set(repetidos.map((r) => normalizarEncabezado(r.codigo)));
   }
 
-  // ---------------------------------------------------------------- Lectura del archivo
-
-  private async leer(archivo: ArchivoSubido): Promise<{ encabezados: string[]; filas: string[][] }> {
-    const nombre = archivo.originalname.toLowerCase();
-    const contenido = nombre.endsWith('.csv') ? this.leerCsv(archivo.buffer) : await this.leerExcel(archivo.buffer);
-
-    if (contenido.encabezados.length === 0) throw reglaIncumplida('El archivo está vacío', 'archivo');
-    if (contenido.filas.length > MAX_FILAS) {
-      throw reglaIncumplida(`El archivo tiene más de ${MAX_FILAS} filas: partilo en varios`, 'archivo');
-    }
-    return contenido;
-  }
-
-  private async leerExcel(buffer: Buffer): Promise<{ encabezados: string[]; filas: string[][] }> {
-    const libro = new ExcelJS.Workbook();
-    try {
-      await libro.xlsx.load(buffer as unknown as ArrayBuffer);
-    } catch {
-      throw reglaIncumplida('No se pudo leer el archivo: tiene que ser un Excel (.xlsx) o un CSV', 'archivo');
-    }
-
-    const hoja = libro.worksheets[0];
-    if (!hoja) return { encabezados: [], filas: [] };
-
-    const filas: string[][] = [];
-    let encabezados: string[] = [];
-    hoja.eachRow((fila, numero) => {
-      const celdas: string[] = [];
-      fila.eachCell({ includeEmpty: true }, (celda, columna) => {
-        celdas[columna - 1] = textoDeCelda(celda.value);
-      });
-      const completas = Array.from({ length: celdas.length }, (_, i) => celdas[i] ?? '');
-      if (numero === 1) encabezados = completas;
-      else if (completas.some((c) => c.trim() !== '')) filas.push(completas);
-    });
-    return { encabezados, filas };
-  }
-
-  /** CSV con `;` o `,`, con o sin comillas y con el BOM que le pone el Excel en español. */
-  private leerCsv(buffer: Buffer): { encabezados: string[]; filas: string[][] } {
-    const texto = buffer.toString('utf8').replace(/^﻿/, '');
-    const lineas = partirEnLineas(texto);
-    if (lineas.length === 0) return { encabezados: [], filas: [] };
-
-    const separador = (lineas[0].match(/;/g)?.length ?? 0) >= (lineas[0].match(/,/g)?.length ?? 0) ? ';' : ',';
-    const [encabezado, ...resto] = lineas.map((l) => partirCampos(l, separador));
-    return { encabezados: encabezado, filas: resto.filter((f) => f.some((c) => c.trim() !== '')) };
-  }
-}
-
-const textoDeCelda = (valor: unknown): string => {
-  if (valor === null || valor === undefined) return '';
-  // Formato de fecha con un valor imposible: que el análisis lo muestre en vez de romper.
-  if (valor instanceof Date) return Number.isNaN(valor.getTime()) ? 'fecha inválida' : valor.toISOString().slice(0, 10);
-  if (typeof valor === 'object') {
-    const v = valor as { text?: string; result?: unknown; richText?: { text: string }[] };
-    if (typeof v.text === 'string') return v.text;
-    if (Array.isArray(v.richText)) return v.richText.map((t) => t.text).join('');
-    if (v.result !== undefined) return textoDeCelda(v.result);
-    return '';
-  }
-  return String(valor);
-};
-
-/** Separa por saltos de línea respetando los que están dentro de comillas. */
-function partirEnLineas(texto: string): string[] {
-  const lineas: string[] = [];
-  let actual = '';
-  let entreComillas = false;
-  for (let i = 0; i < texto.length; i++) {
-    const c = texto[i];
-    if (c === '"') entreComillas = !entreComillas;
-    if (!entreComillas && (c === '\n' || c === '\r')) {
-      if (c === '\r' && texto[i + 1] === '\n') i++;
-      if (actual.trim() !== '') lineas.push(actual);
-      actual = '';
-    } else actual += c;
-  }
-  if (actual.trim() !== '') lineas.push(actual);
-  return lineas;
-}
-
-function partirCampos(linea: string, separador: string): string[] {
-  const campos: string[] = [];
-  let actual = '';
-  let entreComillas = false;
-  for (let i = 0; i < linea.length; i++) {
-    const c = linea[i];
-    if (c === '"') {
-      // Dos comillas seguidas dentro de un campo son una comilla literal.
-      if (entreComillas && linea[i + 1] === '"') {
-        actual += '"';
-        i++;
-      } else entreComillas = !entreComillas;
-    } else if (c === separador && !entreComillas) {
-      campos.push(actual);
-      actual = '';
-    } else actual += c;
-  }
-  campos.push(actual);
-  return campos.map((c) => c.trim());
 }
 
 /** La misma parcela aunque aparezca en varias filas: por manzana y código. */

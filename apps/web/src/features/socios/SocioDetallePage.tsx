@@ -18,6 +18,7 @@ import { HistorialDePagos } from '@/features/cobros/HistorialDePagos';
 import { PlanesDelSocio } from '@/features/planes/PlanesDelSocio';
 import { CuotasDelSocio } from '@/features/cuotas/CuotasDelSocio';
 import { useReactivarSocio, useSocio } from './api';
+import { CargarHistorialDialog } from './CargarHistorialDialog';
 import { AsignarParcelaDialog, BajaSocioDialog, LiberarParcelaDialog } from './dialogs';
 
 export function SocioDetallePage() {
@@ -25,6 +26,7 @@ export function SocioDetallePage() {
   const socioId = Number(id);
   const navigate = useNavigate();
   const { data: socio, isPending, isError, error, refetch } = useSocio(socioId);
+  const [historial, setHistorial] = useState(false);
 
   if (isError) return <ErrorCarga mensaje={error.message} onReintentar={() => void refetch()} />;
   if (isPending) return <div className="h-40 animate-pulse rounded-card bg-superficie" />;
@@ -105,7 +107,8 @@ export function SocioDetallePage() {
         <ParcelasSocio socio={socio} />
       </div>
 
-      <CuotasDelSocio socio={socio} />
+      <CuotasDelSocio socio={socio} onCargarHistorial={() => setHistorial(true)} />
+      <CargarHistorialDialog socio={socio} abierto={historial} onAbiertoChange={setHistorial} />
 
       <PlanesDelSocio socio={socio} />
 

@@ -18,7 +18,14 @@ const VISIBLES = 5;
  * columna por cada parcela, que es el pago por la propiedad del terreno. Las cuotas de los
  * planes de pago van en un grupo aparte, porque no salen de ningún período.
  */
-export function CuotasDelSocio({ socio }: { socio: SocioDetalle }) {
+export function CuotasDelSocio({
+  socio,
+  onCargarHistorial,
+}: {
+  socio: SocioDetalle;
+  /** Abre la carga del historial de antes del sistema, si la ficha la ofrece. */
+  onCargarHistorial?: () => void;
+}) {
   const { data: cuotas, isPending, isError, error } = useCuotasDeSocio(socio.id);
   const [viendoTodas, setViendoTodas] = useState(false);
 
@@ -55,11 +62,22 @@ export function CuotasDelSocio({ socio }: { socio: SocioDetalle }) {
               : `${plural(pendientes, 'cuota pendiente', 'cuotas pendientes')} · ${pesos(deuda)} de deuda`
         }
         acciones={
-          cuotas.length > 0 && (
-            <Link to={`/cuotas?q=${socio.numero}`} className="text-[13px] font-semibold text-pino-600 hover:underline">
-              Ver en el listado
-            </Link>
-          )
+          <span className="flex items-center gap-4">
+            {onCargarHistorial && (
+              <button
+                type="button"
+                onClick={onCargarHistorial}
+                className="text-[13px] font-semibold text-pino-600 hover:underline"
+              >
+                Cargar historial
+              </button>
+            )}
+            {cuotas.length > 0 && (
+              <Link to={`/cuotas?q=${socio.numero}`} className="text-[13px] font-semibold text-pino-600 hover:underline">
+                Ver en el listado
+              </Link>
+            )}
+          </span>
         }
       />
 
@@ -69,7 +87,7 @@ export function CuotasDelSocio({ socio }: { socio: SocioDetalle }) {
           descripcion={
             socio.parcelas.length === 0
               ? 'El socio no tiene parcelas asignadas, así que todavía no genera cuota.'
-              : 'Las cuotas se generan solas todos los días, o a mano desde «Generar período».'
+              : 'Las cuotas se generan solas todos los días, o a mano desde «Generar período». Lo de antes del sistema se carga desde «Cargar historial».'
           }
         />
       ) : (
@@ -128,6 +146,7 @@ function GruposDeCuotas({ grupos, limite }: { grupos: Grupo[]; limite?: number }
                   <Td className="font-medium first-letter:uppercase">
                     {c.etiqueta}
                     {c.adelantada && <span className="ml-1.5 text-xs font-normal normal-case text-tenue">(adelantada)</span>}
+                    {c.historica && <span className="ml-1.5 text-xs font-normal normal-case text-tenue">(historial)</span>}
                   </Td>
                   <Td className="tabular text-tenue">Vence {fecha(c.vencimiento)}</Td>
                   <Td className="text-right tabular">

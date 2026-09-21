@@ -170,6 +170,7 @@ export class CuotasService {
       estado,
       origen: c.origen,
       adelantada: c.adelantada,
+      historica: c.historica,
       diasVencida: estado === 'vencida' ? diasEntre(vencimiento, hoyISO) : 0,
       interes: interesDeCuota({ ...c, vencimiento }, config, hoyISO),
       socio: c.socio,

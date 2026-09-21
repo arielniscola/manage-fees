@@ -259,6 +259,11 @@ model Cuota {
   origen          OrigenCuota    @default(PARCELA)
   /// La creó un pago adelantado: no existía hasta que el socio vino a pagarla.
   adelantada      Boolean        @default(false)
+  /// Viene del historial del club, de antes de usar el sistema: no sale de ninguna tarifa
+  /// —el importe lo trajo la carga— y si está pagada no tiene cobro ni recibo.
+  historica       Boolean        @default(false)
+  /// Cuándo se pagó, según el historial. Solo para las históricas pagadas.
+  pagadaEn        DateTime?      @db.Date
   anuladaEn       DateTime?
   motivoAnulacion String?
   detallesCobro   CobroDetalle[]

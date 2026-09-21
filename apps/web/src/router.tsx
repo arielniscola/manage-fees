@@ -18,6 +18,7 @@ import { ParcelaDetallePage } from './features/parcelas/ParcelaDetallePage';
 import { ParcelasPage } from './features/parcelas/ParcelasPage';
 import { SocioDetallePage } from './features/socios/SocioDetallePage';
 import { SocioFormPage } from './features/socios/SocioFormPage';
+import { ImportarHistorialPage } from './features/socios/ImportarHistorialPage';
 import { ImportarSociosPage } from './features/socios/ImportarSociosPage';
 import { SociosPage } from './features/socios/SociosPage';
 import { UsuariosPage } from './features/usuarios/UsuariosPage';
@@ -37,6 +38,7 @@ export const router = createBrowserRouter([
           { path: 'socios', element: <SociosPage /> },
           { path: 'socios/nuevo', element: <SocioFormPage /> },
           { path: 'socios/importar', element: <ImportarSociosPage /> },
+          { path: 'socios/historial', element: <ImportarHistorialPage /> },
           { path: 'socios/:id', element: <SocioDetallePage /> },
           { path: 'socios/:id/editar', element: <SocioFormPage /> },
           { path: 'parcelas', element: <ParcelasPage /> },

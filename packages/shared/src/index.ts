@@ -6,6 +6,7 @@ export * from './importacion';
 export * from './parcelas';
 export * from './cuotas';
 export * from './adelantos';
+export * from './historial';
 export * from './interes';
 export * from './cobros';
 export * from './planes';

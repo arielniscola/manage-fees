@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
-import { ChevronRight, Plus, Search, Upload } from 'lucide-react';
+import { ChevronRight, History, Plus, Search, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/field';
 import { Avatar, Badge, Card, Chips, ErrorCarga, FilasCargando, Paginacion, Tabla, Td, Th, Vacio } from '@/components/ui/display';
@@ -50,6 +50,9 @@ export function SociosPage() {
         titulo="Socios"
         acciones={
           <>
+            <Button variante="secundario" onClick={() => navigate('/socios/historial')}>
+              <History /> Historial
+            </Button>
             <Button variante="secundario" onClick={() => navigate('/socios/importar')}>
               <Upload /> Importar
             </Button>

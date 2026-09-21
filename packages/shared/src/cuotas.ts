@@ -151,6 +151,8 @@ export interface CuotaListItem {
   origen: OrigenCuota;
   /** La creó un pago adelantado: no existía hasta que el socio vino a pagarla. */
   adelantada: boolean;
+  /** Viene del historial de antes del sistema: si está pagada, no tiene recibo. */
+  historica: boolean;
   /** Días transcurridos desde el vencimiento; 0 si todavía no venció. */
   diasVencida: number;
   /**
