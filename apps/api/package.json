@@ -9,10 +9,10 @@
     "typecheck": "tsc --noEmit",
     "db:migrate": "prisma migrate deploy",
     "db:migrate:dev": "prisma migrate dev",
-    "db:seed": "tsx --env-file=.env prisma/seed.ts",
+    "db:seed": "tsx --env-file-if-exists=.env prisma/seed.ts",
     "prisma:generate": "prisma generate",
     "postinstall": "prisma generate",
-    "usuarios:superadmin": "tsx --env-file=.env prisma/crear-superadmin.ts"
+    "usuarios:superadmin": "tsx --env-file-if-exists=.env prisma/crear-superadmin.ts"
   },
   "dependencies": {
     "@mf/shared": "0.1.0",
