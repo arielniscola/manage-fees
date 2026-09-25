@@ -10,6 +10,7 @@
     "dev:api": "npm run dev -w @mf/api",
     "dev:web": "npm run dev -w @mf/web",
     "build": "npm run build -w @mf/shared && npm run build -w @mf/api && npm run build -w @mf/web",
+    "start": "npm start -w @mf/api",
     "typecheck": "npm run build:shared && npm run typecheck -w @mf/api && npm run typecheck -w @mf/web",
     "test": "npm run test -w @mf/shared",
     "db:migrate": "npm run db:migrate -w @mf/api",
@@ -17,5 +18,6 @@
   },
   "engines": {
     "node": "22.x"
-  }
+  },
+  "packageManager": "npm@10.9.3"
 }
