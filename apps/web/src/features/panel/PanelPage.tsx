@@ -121,7 +121,7 @@ export function PanelPage() {
             <div className="flex flex-col gap-5">
               <TopMorosos morosos={data.topMorosos} />
               <Card className="flex flex-col gap-4 px-6 py-5">
-                <h2 className="font-serif text-lg font-medium">El club hoy</h2>
+                <h2 className="font-serif text-lg font-medium">La cooperativa hoy</h2>
                 <dl className="flex flex-col gap-3">
                   <Dato etiqueta="Socios activos">{data.sociosActivos}</Dato>
                   <Dato etiqueta="Parcelas asignadas">

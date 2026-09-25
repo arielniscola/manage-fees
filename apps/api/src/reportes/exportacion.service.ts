@@ -13,7 +13,7 @@ import {
   type Rango,
 } from './consultas.service';
 
-const NOMBRE_CLUB = process.env.CLUB_NOMBRE || 'Club';
+const NOMBRE_CLUB = process.env.CLUB_NOMBRE || 'Cooperativa';
 
 /** Formato de moneda en el Excel: miles con punto, decimales con coma. */
 const FORMATO_MONEDA = '"$"#,##0.00';

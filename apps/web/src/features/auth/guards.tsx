@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
+import { LogoCooperativa } from '@/components/LogoCooperativa';
 import { Navigate, Outlet, useLocation } from 'react-router';
 import type { Rol } from '@mf/shared';
-import { TreePine } from 'lucide-react';
 import { ErrorCarga } from '@/components/ui/display';
 import { useEventosSesion, useYo } from './api';
 
@@ -38,7 +38,7 @@ export function RequireRol({ rol, children }: { rol: Rol; children: ReactNode })
 function Cargando() {
   return (
     <div className="flex min-h-screen items-center justify-center" aria-busy="true" aria-label="Cargando">
-      <TreePine className="size-8 animate-pulse text-pino-300" strokeWidth={1.6} />
+      <LogoCooperativa className="size-8 animate-pulse text-pino-300" strokeWidth={1.6} />
     </div>
   );
 }

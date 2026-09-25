@@ -187,7 +187,7 @@ export function SocioFormPage() {
             </Field>
           </Seccion>
 
-          <Seccion titulo="Documentación" descripcion="Lo que el club ya recibió de este socio.">
+          <Seccion titulo="Documentación" descripcion="Lo que la cooperativa ya recibió de este socio.">
             <div className="col-span-2 flex flex-wrap gap-x-8 gap-y-3">
               <Tilde id="confirmado" etiqueta="Confirmación" {...register('confirmado')} />
               <Tilde id="fotocopiaDni" etiqueta="Fotocopia del DNI" {...register('fotocopiaDni')} />

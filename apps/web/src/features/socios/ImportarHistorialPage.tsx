@@ -115,7 +115,7 @@ export function ImportarHistorialPage() {
           El período se escribe <b>2024-01</b>, <b>01/2024</b> o <b>enero 2024</b>, y el estado, <b>Pagada</b> o{' '}
           <b>Adeudada</b>. El importe lo trae cada fila: la cuota de 2023 valía lo que valía y no depende de las
           tarifas cargadas. Las pagadas quedan como pagadas <b>sin emitir recibo</b>, para no mezclar esa plata con la
-          caja del club; las adeudadas son deuda como cualquier otra y acumulan interés por mora si está activo. Los
+          caja de la cooperativa; las adeudadas son deuda como cualquier otra y acumulan interés por mora si está activo. Los
           socios y las parcelas tienen que estar cargados, y los períodos que ya tienen cuota se omiten: volver a subir
           el mismo archivo no duplica nada.
         </p>

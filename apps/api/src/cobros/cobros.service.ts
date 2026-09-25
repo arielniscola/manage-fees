@@ -21,7 +21,7 @@ import { InteresService } from '../configuracion/interes.service';
 import { AdelantosService } from '../cuotas/adelantos.service';
 import { PrismaService } from '../prisma/prisma.module';
 
-const NOMBRE_CLUB = process.env.CLUB_NOMBRE || 'Club';
+const NOMBRE_CLUB = process.env.CLUB_NOMBRE || 'Cooperativa';
 
 /** Tope de renglones de un recibo, ya sean cuotas tildadas o adelantadas. */
 const MAX_CUOTAS_POR_COBRO = 120;

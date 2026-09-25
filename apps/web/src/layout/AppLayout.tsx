@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { LogoCooperativa } from '@/components/LogoCooperativa';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router';
-import { Check, ChevronsUpDown, FileSpreadsheet, HandCoins, KeyRound, LayoutDashboard, LogOut, Map, Receipt, ShieldCheck, SlidersHorizontal, TreePine, Users, Wallet } from 'lucide-react';
+import { Check, ChevronsUpDown, FileSpreadsheet, HandCoins, KeyRound, LayoutDashboard, LogOut, Map, Receipt, ShieldCheck, SlidersHorizontal, Users, Wallet } from 'lucide-react';
 import { ETIQUETA_ROL, type UsuarioSesion } from '@mf/shared';
 import { useLogout, useYo } from '@/features/auth/api';
 import { useLoteos } from '@/features/parcelas/api';
@@ -37,7 +38,7 @@ function Estructura() {
       <aside className="sticky top-0 flex h-screen w-[248px] shrink-0 flex-col gap-8 bg-pino-700 px-4 py-6">
         <div className="flex items-center gap-3 px-2">
           <span className="inline-flex size-10 items-center justify-center rounded-control bg-superficie/12">
-            <TreePine className="size-[22px] text-superficie" strokeWidth={1.6} />
+            <LogoCooperativa className="size-[22px] text-superficie" strokeWidth={1.6} />
           </span>
           <div className="flex min-w-0 flex-col">
             <span className="truncate font-serif text-lg font-medium text-superficie">{NOMBRE_CLUB}</span>

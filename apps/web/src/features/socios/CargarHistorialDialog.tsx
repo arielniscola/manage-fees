@@ -206,7 +206,7 @@ export function CargarHistorialDialog({
             label="Fecha de pago"
             htmlFor="historial-fechaPago"
             error={errors.fechaPago?.message}
-            ayuda="Opcional: cuándo las pagó, según el registro del club."
+            ayuda="Opcional: cuándo las pagó, según el registro de la cooperativa."
           >
             <Input id="historial-fechaPago" type="date" className="tabular" {...register('fechaPago')} />
           </Field>

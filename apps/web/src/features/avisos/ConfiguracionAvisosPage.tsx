@@ -177,15 +177,15 @@ function Formulario({ config }: { config: ConfiguracionAvisosCompleta }) {
             error={errors.remitenteNombre?.message}
             ayuda="Lo que ve el socio como nombre de quien le escribe"
           >
-            <Input id="remitenteNombre" placeholder="Tesorería del club" invalido={!!errors.remitenteNombre} {...register('remitenteNombre')} />
+            <Input id="remitenteNombre" placeholder="Tesorería de la cooperativa" invalido={!!errors.remitenteNombre} {...register('remitenteNombre')} />
           </Field>
           <Field
             label="Copia oculta a"
             htmlFor="copiaOculta"
             error={errors.copiaOculta?.message}
-            ayuda="Opcional: una casilla del club recibe copia de cada aviso"
+            ayuda="Opcional: una casilla de la cooperativa recibe copia de cada aviso"
           >
-            <Input id="copiaOculta" type="email" placeholder="tesoreria@club.org" invalido={!!errors.copiaOculta} {...register('copiaOculta')} />
+            <Input id="copiaOculta" type="email" placeholder="tesoreria@cooperativa.org" invalido={!!errors.copiaOculta} {...register('copiaOculta')} />
           </Field>
         </div>
       </Card>

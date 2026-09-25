@@ -24,7 +24,7 @@ import { aFecha, deFecha, fechaLegible } from '../common/fechas';
 import { PrismaService } from '../prisma/prisma.module';
 import { CorreoService } from './correo.service';
 
-const NOMBRE_CLUB = process.env.CLUB_NOMBRE || 'Club';
+const NOMBRE_CLUB = process.env.CLUB_NOMBRE || 'Cooperativa';
 
 const conDatos = {
   socio: { select: { id: true, numero: true, nombre: true, apellido: true, email: true } },

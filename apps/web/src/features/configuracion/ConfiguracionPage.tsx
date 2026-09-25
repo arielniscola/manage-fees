@@ -9,7 +9,7 @@ import { useTarifas } from '@/features/cuotas/api';
 import { useConfiguracionAdelanto, useConfiguracionInteres } from './api';
 
 /**
- * Índice de la configuración del club: lo que se define una vez y después rige para todo.
+ * Índice de la configuración de la cooperativa: lo que se define una vez y después rige para todo.
  * Cada tarjeta adelanta cómo está hoy, para no tener que entrar a cada una a mirar.
  */
 export function ConfiguracionPage() {
@@ -24,7 +24,7 @@ export function ConfiguracionPage() {
 
   return (
     <>
-      <Encabezado antetitulo="Club" titulo="Configuración" />
+      <Encabezado antetitulo="Cooperativa" titulo="Configuración" />
 
       {error ? (
         <ErrorCarga
