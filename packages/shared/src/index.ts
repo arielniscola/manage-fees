@@ -3,6 +3,7 @@ export * from './dinero';
 export * from './periodos';
 export * from './socios';
 export * from './importacion';
+export * from './importacion-parcelas';
 export * from './parcelas';
 export * from './cuotas';
 export * from './adelantos';

@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link, useNavigate } from 'react-router';
-import { ArrowLeftRight, History, LayoutGrid, Map, Pencil, Plus, Search, Trash2 } from 'lucide-react';
+import { ArrowLeftRight, History, LayoutGrid, Map, Pencil, Plus, Search, Trash2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { parcelaCrearSchema, type ParcelaCrear, type ParcelaCrearInput, type ParcelaListItem } from '@mf/shared';
 import { Button } from '@/components/ui/button';
@@ -67,6 +67,9 @@ export function ParcelasPage() {
             </Button>
             <Button variante="secundario" onClick={() => setSectoresAbierto(true)}>
               <LayoutGrid /> Sectores
+            </Button>
+            <Button variante="secundario" onClick={() => navigate('/parcelas/importar')}>
+              <Upload /> Importar
             </Button>
             <Button onClick={() => setEditando('nueva')}>
               <Plus /> Nueva parcela

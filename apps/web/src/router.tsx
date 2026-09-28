@@ -14,6 +14,7 @@ import { ReportesPage } from './features/panel/ReportesPage';
 import { ConfiguracionCuotaPage } from './features/cuotas/ConfiguracionCuotaPage';
 import { CuotasPage } from './features/cuotas/CuotasPage';
 import { PlanesPage } from './features/planes/PlanesPage';
+import { ImportarParcelasPage } from './features/parcelas/ImportarParcelasPage';
 import { ParcelaDetallePage } from './features/parcelas/ParcelaDetallePage';
 import { ParcelasPage } from './features/parcelas/ParcelasPage';
 import { SocioDetallePage } from './features/socios/SocioDetallePage';
@@ -42,6 +43,7 @@ export const router = createBrowserRouter([
           { path: 'socios/:id', element: <SocioDetallePage /> },
           { path: 'socios/:id/editar', element: <SocioFormPage /> },
           { path: 'parcelas', element: <ParcelasPage /> },
+          { path: 'parcelas/importar', element: <ImportarParcelasPage /> },
           { path: 'parcelas/:id', element: <ParcelaDetallePage /> },
           { path: 'cuotas', element: <CuotasPage /> },
           { path: 'cobros', element: <CobrosPage /> },

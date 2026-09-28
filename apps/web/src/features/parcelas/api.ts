@@ -7,6 +7,7 @@ import type {
   ParcelaDetalle,
   ParcelaListarInput,
   ParcelaListItem,
+  ResultadoImportacionParcelas,
   Sector,
   SectorActualizarInput,
   SectorCrearInput,
@@ -157,6 +158,33 @@ export function useTransferenciasDeSocio(socioId: number) {
     enabled: !!socioId,
   });
 }
+
+// ---------------------------------------------------------------- Importación
+
+export interface ArchivoParcelas {
+  archivo: File;
+  loteoId: number;
+}
+
+/** Analiza el archivo sin escribir nada: dice qué pasaría con cada fila. */
+export function usePrevisualizarImportacionParcelas() {
+  return useMutation({
+    mutationFn: ({ archivo, loteoId }: ArchivoParcelas) =>
+      api.subir<ResultadoImportacionParcelas>(`/parcelas/importar/previsualizar?loteoId=${loteoId}`, archivo),
+  });
+}
+
+/** Confirma la importación. Todo o nada. */
+export function useImportarParcelas() {
+  const invalidar = useInvalidar();
+  return useMutation({
+    mutationFn: ({ archivo, loteoId }: ArchivoParcelas) =>
+      api.subir<ResultadoImportacionParcelas>(`/parcelas/importar?loteoId=${loteoId}`, archivo),
+    onSuccess: invalidar,
+  });
+}
+
+export const urlPlantillaParcelas = (): string => '/api/parcelas/importar/plantilla';
 
 /** Pasa la parcela del titular actual a otro socio. */
 export function useTransferirParcela(parcelaId: number) {
