@@ -17,6 +17,7 @@ import {
   tarifaCrearSchema,
   vencimientoDe,
   type AlcanceTarifa,
+  type LoteoResumen,
   type Tarifa,
   type TarifaCrear,
   type TarifaCrearInput,
@@ -28,17 +29,27 @@ import { Field, Input, Select } from '@/components/ui/field';
 import { Encabezado } from '@/layout/AppLayout';
 import { ApiError } from '@/lib/api';
 import { fecha } from '@/lib/formato';
+import { useLoteos } from '@/features/parcelas/api';
 import { useEliminarTarifa, useGuardarTarifa, useTarifas } from './api';
+
+/** Historial a la vista dentro de la cuota por parcela: el general o el id de un loteo. */
+type Historial = 'general' | `${number}`;
 
 /**
  * Valor de las dos cuotas del período: la social, que paga el socio por serlo, y la de
  * parcela, que es el pago por la propiedad del terreno. Cada una lleva su propio historial:
  * cambiar el importe no edita la tarifa actual, agrega una nueva con su mes de vigencia, y
- * solo afecta a los períodos futuros.
+ * solo afecta a los períodos futuros. La de parcela puede tener, además, un precio propio
+ * por loteo; los loteos sin tarifa propia pagan la general.
  */
 export function ConfiguracionCuotaPage() {
   const [alcance, setAlcance] = useState<AlcanceTarifa>('PARCELA');
-  const { data: tarifas, isPending, isError, error, refetch } = useTarifas(alcance);
+  const [historial, setHistorial] = useState<Historial>('general');
+  const { data: todas, isPending, isError, error, refetch } = useTarifas(alcance);
+  const loteos = useLoteos();
+  const loteo: LoteoResumen | null =
+    alcance === 'PARCELA' && historial !== 'general' ? (loteos.data?.find((l) => String(l.id) === historial) ?? null) : null;
+  const tarifas = todas?.filter((t) => (t.loteo?.id ?? null) === (loteo?.id ?? null));
   const [editando, setEditando] = useState<Tarifa | 'nueva' | null>(null);
   const [eliminando, setEliminando] = useState<Tarifa | null>(null);
 
@@ -72,16 +83,34 @@ export function ConfiguracionCuotaPage() {
           opciones={ALCANCES_TARIFA.map((a) => ({ valor: a, label: ETIQUETA_ALCANCE[a] }))}
         />
         <p className="text-[13px] text-tenue">{DESCRIPCION_ALCANCE[alcance]}</p>
+        {alcance === 'PARCELA' && !!loteos.data?.length && (
+          <>
+            <Chips<Historial>
+              etiqueta="Loteo"
+              valor={loteo ? historial : 'general'}
+              onChange={setHistorial}
+              opciones={[
+                { valor: 'general', label: 'General' },
+                ...loteos.data.map((l) => ({ valor: `${l.id}` as const, label: l.nombre })),
+              ]}
+            />
+            <p className="text-[13px] text-tenue">
+              {loteo
+                ? `Precio propio de las parcelas de ${loteo.nombre}. Desde que rige su primera tarifa, los cambios de la general ya no las afectan.`
+                : 'La pagan las parcelas sin loteo y las de los loteos que no tienen un precio propio.'}
+            </p>
+          </>
+        )}
       </div>
 
       {isError ? (
         <ErrorCarga mensaje={error.message} onReintentar={() => void refetch()} />
-      ) : isPending ? (
+      ) : isPending || !tarifas ? (
         <div className="h-40 animate-pulse rounded-card bg-superficie" />
       ) : (
         <>
           <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
-            <TarifaVigente tarifa={vigente} alcance={alcance} onCargar={() => setEditando('nueva')} />
+            <TarifaVigente tarifa={vigente} alcance={alcance} loteo={loteo} onCargar={() => setEditando('nueva')} />
             {proxima && <TarifaProxima tarifa={proxima} />}
           </div>
 
@@ -93,7 +122,11 @@ export function ConfiguracionCuotaPage() {
             {tarifas.length === 0 ? (
               <Vacio
                 titulo="Todavía no hay ninguna tarifa"
-                descripcion={`Cargá el importe de ${ETIQUETA_ALCANCE[alcance].toLowerCase()} para poder generar los períodos.`}
+                descripcion={
+                  loteo
+                    ? `Mientras ${loteo.nombre} no tenga precio propio, sus parcelas pagan la tarifa general.`
+                    : `Cargá el importe de ${ETIQUETA_ALCANCE[alcance].toLowerCase()} para poder generar los períodos.`
+                }
                 accion={
                   <Button onClick={() => setEditando('nueva')}>
                     <Plus /> Nueva tarifa
@@ -150,19 +183,31 @@ export function ConfiguracionCuotaPage() {
         </>
       )}
 
-      <TarifaFormDialog alcance={alcance} tarifa={editando} tarifas={tarifas ?? []} onCerrar={() => setEditando(null)} />
+      <TarifaFormDialog alcance={alcance} loteo={loteo} tarifa={editando} tarifas={tarifas ?? []} onCerrar={() => setEditando(null)} />
       <EliminarTarifaDialog tarifa={eliminando} onCerrar={() => setEliminando(null)} />
     </>
   );
 }
 
-function TarifaVigente({ tarifa, alcance, onCargar }: { tarifa: Tarifa | null; alcance: AlcanceTarifa; onCargar: () => void }) {
+function TarifaVigente({
+  tarifa,
+  alcance,
+  loteo,
+  onCargar,
+}: {
+  tarifa: Tarifa | null;
+  alcance: AlcanceTarifa;
+  loteo: LoteoResumen | null;
+  onCargar: () => void;
+}) {
   if (!tarifa) {
     return (
       <Card className="flex flex-col items-start gap-3 px-7 py-6">
         <span className="text-xs font-semibold uppercase tracking-[0.06em] text-tenue">Cuota vigente</span>
         <p className="text-sm text-tenue">
-          Todavía no hay una tarifa en vigencia, así que la generación de cuotas no tiene con qué trabajar.
+          {loteo
+            ? `${loteo.nombre} no tiene un precio propio en vigencia: sus parcelas pagan la tarifa general.`
+            : 'Todavía no hay una tarifa en vigencia, así que la generación de cuotas no tiene con qué trabajar.'}
         </p>
         <Button onClick={onCargar}>
           <Plus /> Cargar la primera tarifa
@@ -173,7 +218,9 @@ function TarifaVigente({ tarifa, alcance, onCargar }: { tarifa: Tarifa | null; a
 
   return (
     <Card className="flex flex-col gap-4 px-7 py-6">
-      <span className="text-xs font-semibold uppercase tracking-[0.06em] text-tenue">Cuota vigente</span>
+      <span className="text-xs font-semibold uppercase tracking-[0.06em] text-tenue">
+        Cuota vigente{tarifa.loteo ? ` · ${tarifa.loteo.nombre}` : ''}
+      </span>
       <div className="flex flex-wrap items-baseline gap-3">
         <span className="font-serif text-[40px] font-medium leading-none tabular">{pesos(tarifa.importe)}</span>
         <span className="text-sm text-tenue">
@@ -224,16 +271,19 @@ function IconoBoton({ etiqueta, onClick, peligro, children }: { etiqueta: string
 
 function TarifaFormDialog({
   alcance,
+  loteo,
   tarifa,
   tarifas,
   onCerrar,
 }: {
   alcance: AlcanceTarifa;
+  loteo: LoteoResumen | null;
   tarifa: Tarifa | 'nueva' | null;
   tarifas: Tarifa[];
   onCerrar: () => void;
 }) {
   const existente = tarifa && tarifa !== 'nueva' ? tarifa : null;
+  const loteoDeLaTarifa = existente ? existente.loteo : loteo;
   const guardar = useGuardarTarifa(existente?.id ?? null);
   const {
     register,
@@ -254,12 +304,14 @@ function TarifaFormDialog({
     reset({
       // El alcance sale de la pestaña: una tarifa no cambia de cuota una vez creada.
       alcance: existente?.alcance ?? alcance,
+      // El loteo también: la tarifa entra al historial que está a la vista.
+      loteoId: existente ? (existente.loteo?.id ?? null) : (loteo?.id ?? null),
       importe: existente ? pesos(existente.importe, { simbolo: false }) : '',
       periodicidad: existente?.periodicidad ?? tarifas[0]?.periodicidad ?? 'MENSUAL',
       diaVencimiento: existente?.diaVencimiento ?? tarifas[0]?.diaVencimiento ?? 10,
       vigenteDesde: existente?.vigenteDesde ?? sugerido,
     });
-  }, [tarifa, existente, alcance, reset]);
+  }, [tarifa, existente, alcance, loteo, reset]);
 
   const vigenteDesde = watch('vigenteDesde');
   const diaVencimiento = Number(watch('diaVencimiento'));
@@ -286,7 +338,11 @@ function TarifaFormDialog({
       abierto={!!tarifa}
       onAbiertoChange={(v) => !v && onCerrar()}
       ancho="sm"
-      titulo={`${existente ? 'Editar' : 'Nueva'} tarifa · ${ETIQUETA_ALCANCE[existente?.alcance ?? alcance]}`}
+      titulo={[
+        `${existente ? 'Editar' : 'Nueva'} tarifa`,
+        ETIQUETA_ALCANCE[existente?.alcance ?? alcance],
+        ...(loteoDeLaTarifa ? [loteoDeLaTarifa.nombre] : []),
+      ].join(' · ')}
       descripcion={
         existente
           ? 'Esta tarifa todavía no generó cuotas, así que se puede corregir.'

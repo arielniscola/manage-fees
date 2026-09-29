@@ -89,6 +89,7 @@ model Loteo {
   descripcion String?
   direccion   String?
   sectores    Sector[]
+  tarifas     Tarifa[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
@@ -191,9 +192,16 @@ enum AlcanceTarifa {
 
 /// Valor de una cuota. La tabla es histórica: cada cambio agrega una fila con su mes de
 /// vigencia y solo afecta a los períodos que empiezan desde ahí en adelante.
+/// La cuota de parcela puede tener un precio propio por loteo: cada loteo con tarifa lleva
+/// su historial, y las parcelas de los demás loteos siguen con la general (sin loteo).
+/// La migración agrega los índices únicos parciales: un mes de vigencia por alcance en la
+/// general y uno por loteo en las propias.
 model Tarifa {
   id             Int           @id @default(autoincrement())
   alcance        AlcanceTarifa @default(PARCELA)
+  /// Solo para alcance PARCELA. Null es la tarifa general.
+  loteo          Loteo?        @relation(fields: [loteoId], references: [id], onDelete: Restrict)
+  loteoId        Int?
   /// Centavos.
   importe        Int
   periodicidad   Periodicidad  @default(MENSUAL)
@@ -205,7 +213,7 @@ model Tarifa {
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
-  @@unique([alcance, vigenteDesde])
+  @@index([loteoId])
 }
 
 enum EstadoCuota {

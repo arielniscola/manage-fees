@@ -123,7 +123,14 @@ export class GeneracionService {
 
     const asignaciones = await db.asignacion.findMany({
       where: { desde: { lte: aFecha(hasta) }, ...(socioId && { socioId }) },
-      select: { id: true, socioId: true, parcelaId: true, desde: true, hasta: true },
+      select: {
+        id: true,
+        socioId: true,
+        parcelaId: true,
+        desde: true,
+        hasta: true,
+        parcela: { select: { sector: { select: { loteoId: true } } } },
+      },
       // La más vieja primero: si una parcela cambió de titular dentro del período,
       // la cuota queda a nombre de quien era titular cuando el período empezó.
       orderBy: [{ desde: 'asc' }, { id: 'asc' }],
@@ -135,15 +142,35 @@ export class GeneracionService {
     ];
   }
 
-  /** Una cuota por parcela asignada y período, a nombre del titular de ese momento. */
+  /**
+   * Una cuota por parcela asignada y período, a nombre del titular de ese momento. El
+   * importe sale de la tarifa del loteo de la parcela si tiene una, o de la general.
+   */
   private cuotasDeParcela(tarifas: Tarifa[], asignaciones: Asignacion[], limite: string): Candidata[] {
     if (tarifas.length === 0) return [];
-    const primerMes = mesVigencia(tarifas[0]);
+    const general = tarifas.filter((t) => t.loteoId === null);
+    const porLoteo = new Map<number, Tarifa[]>();
+    for (const t of tarifas) {
+      if (t.loteoId !== null) porLoteo.set(t.loteoId, [...(porLoteo.get(t.loteoId) ?? []), t]);
+    }
+    const cadenas = new Map<number | null, Tarifa[]>();
+    const cadenaDe = (loteoId: number | null): Tarifa[] => {
+      let cadena = cadenas.get(loteoId);
+      if (!cadena) {
+        cadena = cadenaDeLoteo(general, loteoId === null ? undefined : porLoteo.get(loteoId));
+        cadenas.set(loteoId, cadena);
+      }
+      return cadena;
+    };
+
     const candidatas: Candidata[] = [];
     const vistas = new Set<string>();
 
     for (const a of asignaciones) {
-      for (const { periodo, tarifa } of this.periodos(tarifas, a, limite, primerMes)) {
+      const cadena = cadenaDe(a.parcela.sector?.loteoId ?? null);
+      if (cadena.length === 0) continue;
+      const primerMes = mesVigencia(cadena[0]);
+      for (const { periodo, tarifa } of this.periodos(cadena, a, limite, primerMes)) {
         const k = `PARCELA|${a.parcelaId}|${periodo}`;
         if (vistas.has(k)) continue;
         vistas.add(k);
@@ -298,6 +325,18 @@ interface Asignacion {
   parcelaId: number;
   desde: Date;
   hasta: Date | null;
+  parcela: { sector: { loteoId: number | null } | null };
+}
+
+/**
+ * Las tarifas que rigen para las parcelas de un loteo, de la más vieja a la más nueva.
+ * Hasta que empieza la primera tarifa propia del loteo rige la general; desde ahí, solo las
+ * propias, así que los cambios posteriores de la general ya no lo tocan.
+ */
+export function cadenaDeLoteo(general: Tarifa[], propias: Tarifa[] | undefined): Tarifa[] {
+  if (!propias?.length) return general;
+  const inicio = mesVigencia(propias[0]);
+  return [...general.filter((t) => mesVigencia(t) < inicio), ...propias];
 }
 
 const clave = (c: Candidata) => (c.origen === 'SOCIO' ? `SOCIO|${c.socioId}|${c.periodo}` : `PARCELA|${c.parcelaId}|${c.periodo}`);

@@ -45,7 +45,9 @@ export function ConfiguracionPage() {
             descripcion="La cuota social y la de parcela: importe, cada cuánto se emiten y qué día vencen. Cada una lleva su historial, y un cambio solo afecta a los períodos futuros."
             estado={
               vigentes.length
-                ? vigentes.map((t) => `${ETIQUETA_ALCANCE[t.alcance]} ${pesos(t.importe)}`).join(' · ')
+                ? vigentes
+                    .map((t) => `${t.loteo ? `Parcela ${t.loteo.nombre}` : ETIQUETA_ALCANCE[t.alcance]} ${pesos(t.importe)}`)
+                    .join(' · ')
                 : undefined
             }
           />

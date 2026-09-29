@@ -46,7 +46,14 @@ export class LoteosService {
       const cuantos = loteo._count.sectores === 1 ? 'un sector' : `${loteo._count.sectores} sectores`;
       throw conflicto(`El loteo tiene ${cuantos}. Movelos a otro loteo antes de eliminarlo.`);
     }
-    await this.prisma.loteo.delete({ where: { id } });
+    // Sus tarifas propias se van con él, salvo que alguna ya haya generado cuotas.
+    if ((await this.prisma.cuota.count({ where: { tarifa: { loteoId: id } } })) > 0) {
+      throw conflicto('El loteo tiene tarifas que ya generaron cuotas, así que no se puede eliminar.');
+    }
+    await this.prisma.$transaction([
+      this.prisma.tarifa.deleteMany({ where: { loteoId: id } }),
+      this.prisma.loteo.delete({ where: { id } }),
+    ]);
   }
 
   private async existe(id: number) {

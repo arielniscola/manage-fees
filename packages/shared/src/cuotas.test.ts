@@ -115,7 +115,13 @@ describe('tarifaCrearSchema', () => {
   it('guarda el importe en centavos y aplica los valores por defecto', () => {
     const t = tarifaCrearSchema.parse({ importe: '12.000', vigenteDesde: '2026-10' });
     // Sin alcance se asume la cuota por parcela, que es la que ya existía.
-    expect(t).toEqual({ alcance: 'PARCELA', importe: 1200000, periodicidad: 'MENSUAL', diaVencimiento: 10, vigenteDesde: '2026-10' });
+    expect(t).toEqual({ alcance: 'PARCELA', loteoId: null, importe: 1200000, periodicidad: 'MENSUAL', diaVencimiento: 10, vigenteDesde: '2026-10' });
+  });
+
+  it('toma el loteo como número y lo deja en null si viene vacío', () => {
+    expect(tarifaCrearSchema.parse({ importe: '3.000', loteoId: '4', vigenteDesde: '2026-10' }).loteoId).toBe(4);
+    expect(tarifaCrearSchema.parse({ importe: '3.000', loteoId: '', vigenteDesde: '2026-10' }).loteoId).toBeNull();
+    expect(tarifaCrearSchema.safeParse({ importe: '3.000', loteoId: 'x', vigenteDesde: '2026-10' }).success).toBe(false);
   });
 
   it('acepta las dos cuotas y rechaza cualquier otro alcance', () => {

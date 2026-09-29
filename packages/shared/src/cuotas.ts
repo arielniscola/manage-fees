@@ -4,7 +4,7 @@ import { importeSchema } from './dinero';
 import { etiquetaPeriodo, PERIODICIDADES, type Periodicidad } from './periodos';
 import { numeroPlan } from './planes';
 import type { ParcelaResumen } from './socios';
-import type { SectorResumen, SocioResumen } from './parcelas';
+import type { LoteoResumen, SectorResumen, SocioResumen } from './parcelas';
 
 /** Mes de calendario 'AAAA-MM'. Las tarifas rigen desde el primero de un mes. */
 export const mesSchema = z
@@ -36,6 +36,14 @@ export const DESCRIPCION_ALCANCE: Record<AlcanceTarifa, string> = {
 
 export const tarifaCrearSchema = z.object({
   alcance: z.enum(ALCANCES_TARIFA, { required_error: 'Elegí qué cuota valoriza' }).default('PARCELA'),
+  /**
+   * Solo para la cuota por parcela: el loteo cuyas parcelas valoriza. Sin loteo es la
+   * tarifa general, la que pagan las parcelas de los loteos sin precio propio.
+   */
+  loteoId: z.preprocess(
+    (v) => (v === '' || v === undefined ? null : v),
+    z.coerce.number({ invalid_type_error: 'Elegí un loteo' }).int().positive('Elegí un loteo').nullable(),
+  ),
   importe: importeSchema,
   periodicidad: z.enum(PERIODICIDADES, { required_error: 'Elegí la periodicidad' }).default('MENSUAL'),
   diaVencimiento: z.coerce
@@ -49,19 +57,22 @@ export const tarifaCrearSchema = z.object({
 export type TarifaCrearInput = z.input<typeof tarifaCrearSchema>;
 export type TarifaCrear = z.output<typeof tarifaCrearSchema>;
 
-export const tarifaActualizarSchema = tarifaCrearSchema.partial();
+/** El loteo, como el alcance, no se cambia: sería mover la tarifa de historial. */
+export const tarifaActualizarSchema = tarifaCrearSchema.omit({ loteoId: true }).partial();
 export type TarifaActualizarInput = z.input<typeof tarifaActualizarSchema>;
 export type TarifaActualizar = z.output<typeof tarifaActualizarSchema>;
 
 export interface Tarifa {
   id: number;
   alcance: AlcanceTarifa;
+  /** Null en la tarifa general. */
+  loteo: LoteoResumen | null;
   importe: number;
   periodicidad: Periodicidad;
   diaVencimiento: number;
   /** Mes desde el que rige, 'AAAA-MM'. */
   vigenteDesde: string;
-  /** Es la tarifa que se aplica hoy. */
+  /** Es la tarifa que se aplica hoy dentro de su historial (general o del loteo). */
   vigente: boolean;
   /** Todavía no empezó a regir. */
   futura: boolean;

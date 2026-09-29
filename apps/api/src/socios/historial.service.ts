@@ -161,7 +161,7 @@ export class HistorialService {
         select: { id: true, numero: true, nombre: true, apellido: true, dni: true },
       }),
       this.parcelasPorCodigo(),
-      this.prisma.tarifa.findMany({ orderBy: { vigenteDesde: 'asc' } }),
+      this.prisma.tarifa.findMany({ where: { loteoId: null }, orderBy: { vigenteDesde: 'asc' } }),
     ]);
 
     const porDni = new Map(socios.map((s) => [s.dni, s]));
