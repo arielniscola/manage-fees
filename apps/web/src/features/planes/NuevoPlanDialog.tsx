@@ -19,6 +19,7 @@ import { Field, Input, Textarea } from '@/components/ui/field';
 import { useCuotasDeSocio } from '@/features/cuotas/api';
 import { BadgeCuota } from '@/features/cuotas/estados';
 import { useSocios } from '@/features/socios/api';
+import { useLoteoActivo } from '@/layout/loteo-activo';
 import { ApiError } from '@/lib/api';
 import { dni as formatoDni, fecha, iniciales, nombreCompleto, plural } from '@/lib/formato';
 import { useDebounce } from '@/lib/hooks';
@@ -106,7 +107,8 @@ function ElegirMorosoDialog({
 }) {
   const [texto, setTexto] = useState('');
   const q = useDebounce(texto);
-  const { data } = useSocios({ q: q || undefined, estado: 'moroso', page: 1, pageSize: 8 });
+  const { loteoId } = useLoteoActivo();
+  const { data } = useSocios({ q: q || undefined, estado: 'moroso', loteoId, page: 1, pageSize: 8 });
 
   return (
     <Dialog

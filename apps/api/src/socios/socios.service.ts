@@ -13,7 +13,7 @@ import type {
 import { Prisma, type Socio } from '@prisma/client';
 import { conflicto, noEncontrado, reglaIncumplida } from '../common/errores';
 import { aFecha, deFecha, deFechaNullable, fechaLegible } from '../common/fechas';
-import { sociosDelLoteo } from '../common/loteo';
+import { cuotasDelLoteo, sociosDelLoteo } from '../common/loteo';
 import { aParcelaUbicada, parcelaResumen } from '../common/parcela';
 import { InteresService } from '../configuracion/interes.service';
 import { esDuplicado, PrismaService } from '../prisma/prisma.module';
@@ -60,7 +60,7 @@ export class SociosService {
       }),
     ]);
 
-    const cuentas = await this.estadoDeCuenta(socios.map((s) => s.id));
+    const cuentas = await this.estadoDeCuenta(socios.map((s) => s.id), loteoId);
     return {
       items: socios.map((s) => this.aListItem(s, cuentas.get(s.id))),
       total,
@@ -93,6 +93,8 @@ export class SociosService {
           socioId: { in: candidatos.map((s) => s.id) },
           estado: 'PENDIENTE',
           vencimiento: { lt: aFecha(hoyISO) },
+          // Con un loteo activo, moroso es quien debe en ese loteo, no en otro.
+          ...cuotasDelLoteo(loteoId),
         },
         select: { socioId: true, importe: true, vencimiento: true, estado: true, origen: true },
       }),
@@ -110,7 +112,7 @@ export class SociosService {
       where: { id: { in: pagina } },
       include: conParcelasVigentes,
     });
-    const cuentas = await this.estadoDeCuenta(pagina);
+    const cuentas = await this.estadoDeCuenta(pagina, loteoId);
     const porId = new Map(socios.map((s) => [s.id, s]));
 
     return {
@@ -266,9 +268,11 @@ export class SociosService {
 
   /**
    * Deuda de cada socio: cuotas sin pagar y cuánto suman. «Vencida» se calcula contra la
-   * fecha de hoy, así que no depende de que haya corrido ningún proceso.
+   * fecha de hoy, así que no depende de que haya corrido ningún proceso. Con `loteoId`
+   * cuenta solo las cuotas de ese loteo: un listado filtrado suma lo mismo que el
+   * listado de cuotas y el panel de ese loteo.
    */
-  private async estadoDeCuenta(socioIds: number[]): Promise<Map<number, EstadoCuenta>> {
+  private async estadoDeCuenta(socioIds: number[], loteoId?: number): Promise<Map<number, EstadoCuenta>> {
     const cuentas = new Map<number, EstadoCuenta>();
     if (socioIds.length === 0) return cuentas;
 
@@ -277,7 +281,7 @@ export class SociosService {
     const [config, pendientes] = await Promise.all([
       this.interes.vigente(),
       this.prisma.cuota.findMany({
-        where: { socioId: { in: socioIds }, estado: 'PENDIENTE' },
+        where: { socioId: { in: socioIds }, estado: 'PENDIENTE', ...cuotasDelLoteo(loteoId) },
         select: { socioId: true, importe: true, vencimiento: true, estado: true, origen: true },
       }),
     ]);

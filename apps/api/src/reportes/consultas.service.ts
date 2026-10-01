@@ -16,7 +16,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { CobrosService } from '../cobros/cobros.service';
 import { aFecha, deFecha } from '../common/fechas';
-import { cuotasDelLoteo, parcelasDelLoteo, sociosDelLoteo, sqlSocioDelLoteo } from '../common/loteo';
+import { cuotasDelLoteo, parcelasDelLoteo, sociosDelLoteo, sqlCobroDelLoteo, sqlCuotaDelLoteo } from '../common/loteo';
 import { InteresService } from '../configuracion/interes.service';
 import { PlanesService } from '../planes/planes.service';
 import { PrismaService } from '../prisma/prisma.module';
@@ -130,25 +130,14 @@ export class ConsultasService {
       SELECT to_char(c."fecha", 'YYYY-MM') AS mes, COALESCE(SUM(c."total"), 0)::bigint AS monto
       FROM "Cobro" c
       WHERE c."anuladoEn" IS NULL AND c."fecha" >= ${desde}
-      ${sqlSocioDelLoteo(Prisma.sql`c."socioId"`, loteoId)}
+      ${sqlCobroDelLoteo(Prisma.sql`c`, loteoId)}
       GROUP BY 1
     `;
-    // Una cuota de plan no tiene parcela: esa sigue al socio, igual que en `cuotasDelLoteo`.
-    const porLoteo = loteoId
-      ? Prisma.sql`AND (
-          EXISTS (
-            SELECT 1 FROM "Parcela" p
-            JOIN "Sector" s ON s."id" = p."sectorId"
-            WHERE p."id" = cu."parcelaId" AND s."loteoId" = ${loteoId}
-          )
-          OR (cu."parcelaId" IS NULL ${sqlSocioDelLoteo(Prisma.sql`cu."socioId"`, loteoId)})
-        )`
-      : Prisma.empty;
     const emitido = await this.prisma.$queryRaw<{ mes: string; monto: bigint }[]>`
       SELECT to_char(cu."vencimiento", 'YYYY-MM') AS mes, COALESCE(SUM(cu."importe"), 0)::bigint AS monto
       FROM "Cuota" cu
       WHERE cu."estado" IN ('PENDIENTE', 'PAGADA') AND cu."vencimiento" >= ${desde}
-      ${porLoteo}
+      ${sqlCuotaDelLoteo(Prisma.sql`cu`, loteoId)}
       GROUP BY 1
     `;
 

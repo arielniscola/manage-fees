@@ -34,9 +34,13 @@ export const cuotasDelLoteo = (loteoId?: number): Prisma.CuotaWhereInput =>
       }
     : {};
 
-/** Un cobro es del loteo si lo es el socio que pagó: cancela cuotas de varias parcelas. */
+/**
+ * Un cobro es del loteo si alguno de sus renglones cancela una cuota del loteo: el mismo
+ * criterio del filtro por parcela. Así un socio con parcelas en dos loteos no arrastra al
+ * listado de uno lo que pagó por el otro, y cobros y cuotas cuentan lo mismo.
+ */
 export const cobrosDelLoteo = (loteoId?: number): Prisma.CobroWhereInput =>
-  loteoId ? { AND: [{ socio: sociosDelLoteo(loteoId) }] } : {};
+  loteoId ? { AND: [{ detalles: { some: { cuota: cuotasDelLoteo(loteoId) } } }] } : {};
 
 export const planesDelLoteo = (loteoId?: number): Prisma.PlanPagoWhereInput =>
   loteoId ? { AND: [{ socio: sociosDelLoteo(loteoId) }] } : {};
@@ -49,5 +53,28 @@ export const sqlSocioDelLoteo = (columnaSocioId: Prisma.Sql, loteoId?: number): 
         JOIN "Parcela" p ON p."id" = a."parcelaId"
         JOIN "Sector" s ON s."id" = p."sectorId"
         WHERE a."socioId" = ${columnaSocioId} AND a."hasta" IS NULL AND s."loteoId" = ${loteoId}
+      )`
+    : Prisma.empty;
+
+/** El mismo criterio de `cuotasDelLoteo`, en SQL. `cuota` es el alias de la tabla Cuota. */
+export const sqlCuotaDelLoteo = (cuota: Prisma.Sql, loteoId?: number): Prisma.Sql =>
+  loteoId
+    ? Prisma.sql`AND (
+        EXISTS (
+          SELECT 1 FROM "Parcela" p
+          JOIN "Sector" s ON s."id" = p."sectorId"
+          WHERE p."id" = ${cuota}."parcelaId" AND s."loteoId" = ${loteoId}
+        )
+        OR (${cuota}."parcelaId" IS NULL ${sqlSocioDelLoteo(Prisma.sql`${cuota}."socioId"`, loteoId)})
+      )`
+    : Prisma.empty;
+
+/** El mismo criterio de `cobrosDelLoteo`, en SQL. `cobro` es el alias de la tabla Cobro. */
+export const sqlCobroDelLoteo = (cobro: Prisma.Sql, loteoId?: number): Prisma.Sql =>
+  loteoId
+    ? Prisma.sql`AND EXISTS (
+        SELECT 1 FROM "CobroDetalle" d
+        JOIN "Cuota" dc ON dc."id" = d."cuotaId"
+        WHERE d."cobroId" = ${cobro}."id" ${sqlCuotaDelLoteo(Prisma.sql`dc`, loteoId)}
       )`
     : Prisma.empty;

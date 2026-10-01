@@ -17,6 +17,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Dialog } from '@/components/ui/dialog';
 import { Field, Input } from '@/components/ui/field';
+import { useLoteoActivo } from '@/layout/loteo-activo';
 import { ApiError } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { fecha, nombreCompleto } from '@/lib/formato';
@@ -92,7 +93,8 @@ export function AsignarParcelaDialog({ socio, abierto, onAbiertoChange }: Dialog
   const [desde, setDesde] = useState(hoy());
   const [errores, setErrores] = useState<{ parcelaId?: string; desde?: string }>({});
   const q = useDebounce(texto);
-  const libres = useParcelas({ estado: 'libre', q: q || undefined, pageSize: 8 }, { enabled: abierto });
+  const { loteoId } = useLoteoActivo();
+  const libres = useParcelas({ estado: 'libre', q: q || undefined, loteoId, pageSize: 8 }, { enabled: abierto });
 
   useEffect(() => {
     if (abierto) {
@@ -127,7 +129,7 @@ export function AsignarParcelaDialog({ socio, abierto, onAbiertoChange }: Dialog
       abierto={abierto}
       onAbiertoChange={onAbiertoChange}
       titulo="Asignar parcela"
-      descripcion={`A ${nombreCompleto(socio)}. Solo se muestran parcelas libres.`}
+      descripcion={`A ${nombreCompleto(socio)}. Solo se muestran parcelas libres${loteoId ? ' del loteo activo' : ''}.`}
       pie={
         <>
           <Button variante="secundario" onClick={() => onAbiertoChange(false)}>Cancelar</Button>
