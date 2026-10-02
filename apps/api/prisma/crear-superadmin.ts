@@ -2,7 +2,7 @@
  * Crea el primer superadmin del sistema.
  *
  * Uso:
- *   npm run usuarios:superadmin -w @mf/api -- --usuario tesoreria --email tesoreria@club.org --nombre "Tesorería"
+ *   npm run usuarios:superadmin -w @mf/api -- --usuario tesoreria --email tesoreria@cooperativa.org --nombre "Tesorería"
  *
  * `--usuario` es con lo que se ingresa al sistema. Si no se indica, se arma con la parte
  * del email anterior a la arroba.
