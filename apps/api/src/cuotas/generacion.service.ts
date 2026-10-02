@@ -129,7 +129,9 @@ export class GeneracionService {
         parcelaId: true,
         desde: true,
         hasta: true,
-        parcela: { select: { sector: { select: { loteoId: true } } } },
+        parcela: {
+          select: { importeCuota: true, sector: { select: { loteo: { select: { id: true, importePorParcela: true } } } } },
+        },
       },
       // La más vieja primero: si una parcela cambió de titular dentro del período,
       // la cuota queda a nombre de quien era titular cuando el período empezó.
@@ -144,7 +146,9 @@ export class GeneracionService {
 
   /**
    * Una cuota por parcela asignada y período, a nombre del titular de ese momento. El
-   * importe sale de la tarifa del loteo de la parcela si tiene una, o de la general.
+   * importe sale de la tarifa del loteo de la parcela si tiene una, o de la general. Si el
+   * loteo cobra por parcela y la parcela tiene su importe cargado, se usa ese: la tarifa
+   * sigue poniendo la periodicidad, el vencimiento y desde cuándo se cobra.
    */
   private cuotasDeParcela(tarifas: Tarifa[], asignaciones: Asignacion[], limite: string): Candidata[] {
     if (tarifas.length === 0) return [];
@@ -167,7 +171,9 @@ export class GeneracionService {
     const vistas = new Set<string>();
 
     for (const a of asignaciones) {
-      const cadena = cadenaDe(a.parcela.sector?.loteoId ?? null);
+      const loteo = a.parcela.sector?.loteo ?? null;
+      const cadena = cadenaDe(loteo?.id ?? null);
+      const importePropio = loteo?.importePorParcela ? a.parcela.importeCuota : null;
       if (cadena.length === 0) continue;
       const primerMes = mesVigencia(cadena[0]);
       for (const { periodo, tarifa } of this.periodos(cadena, a, limite, primerMes)) {
@@ -181,7 +187,7 @@ export class GeneracionService {
           tarifaId: tarifa.id,
           periodo,
           periodicidad: tarifa.periodicidad,
-          importe: tarifa.importe,
+          importe: importePropio ?? tarifa.importe,
           vencimiento: aFecha(vencimientoDe(periodo, tarifa.diaVencimiento)),
           origen: 'PARCELA',
         });
@@ -325,7 +331,10 @@ interface Asignacion {
   parcelaId: number;
   desde: Date;
   hasta: Date | null;
-  parcela: { sector: { loteoId: number | null } | null };
+  parcela: {
+    importeCuota: number | null;
+    sector: { loteo: { id: number; importePorParcela: boolean } | null } | null;
+  };
 }
 
 /**

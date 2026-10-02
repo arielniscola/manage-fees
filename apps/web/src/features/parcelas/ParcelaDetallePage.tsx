@@ -86,6 +86,7 @@ function Cabecera({ parcela }: { parcela: ParcelaDetalle }) {
         <span className="text-sm text-tenue">
           {ubicacion}
           {parcela.superficieM2 !== null && ` · ${metros(parcela.superficieM2)}`}
+          {parcela.importeCuota !== null && ` · Cuota propia de ${pesos(parcela.importeCuota)}`}
           {parcela.descripcion && ` · ${parcela.descripcion}`}
         </span>
         {parcela.titular ? (

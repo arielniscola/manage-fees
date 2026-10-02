@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Link, useNavigate } from 'react-router';
 import { ArrowLeftRight, History, LayoutGrid, Map, Pencil, Plus, Search, Trash2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
-import { parcelaCrearSchema, type ParcelaCrear, type ParcelaCrearInput, type ParcelaListItem } from '@mf/shared';
+import { parcelaCrearSchema, pesos, type ParcelaCrear, type ParcelaCrearInput, type ParcelaListItem } from '@mf/shared';
 import { Button } from '@/components/ui/button';
 import { Badge, Card, Chips, ErrorCarga, FilasCargando, Paginacion, Tabla, Td, Th, Vacio } from '@/components/ui/display';
 import { Dialog } from '@/components/ui/dialog';
@@ -257,6 +257,7 @@ export function ParcelaFormDialog({ parcela, onCerrar }: { parcela: ParcelaListI
         codigo: existente?.codigo ?? '',
         sectorId: existente?.sector?.id ?? '',
         superficieM2: existente?.superficieM2 ?? '',
+        importeCuota: existente?.importeCuota === null || !existente ? '' : pesos(existente.importeCuota, { simbolo: false }),
         descripcion: existente?.descripcion ?? '',
       });
       // Al editar arranca en el loteo de la parcela; al crear, en el del sidebar.
@@ -278,6 +279,11 @@ export function ParcelaFormDialog({ parcela, onCerrar }: { parcela: ParcelaListI
     );
     if (!sigueValiendo) setValue('sectorId', '');
   };
+
+  // El importe propio solo se pide si el loteo del sector elegido cobra por parcela.
+  const sectorElegido = sectores.find((s) => s.id === Number(watch('sectorId')));
+  const loteoDelSector = loteos.find((l) => l.id === sectorElegido?.loteo?.id);
+  const pideImporte = !!loteoDelSector?.importePorParcela;
 
   const onSubmit = handleSubmit((datos) =>
     guardar.mutate(datos, {
@@ -369,6 +375,23 @@ export function ParcelaFormDialog({ parcela, onCerrar }: { parcela: ParcelaListI
             {...register('superficieM2')}
           />
         </Field>
+        {pideImporte && (
+          <Field
+            label="Importe de la cuota"
+            htmlFor="importeCuota"
+            error={errors.importeCuota?.message}
+            ayuda={`El loteo ${loteoDelSector.nombre} cobra por parcela. Vacío, paga el importe de la tarifa. Un cambio afecta solo a las cuotas que todavía no se generaron.`}
+          >
+            <Input
+              id="importeCuota"
+              inputMode="decimal"
+              className="tabular"
+              placeholder="0,00"
+              invalido={!!errors.importeCuota}
+              {...register('importeCuota')}
+            />
+          </Field>
+        )}
         <Field label="Descripción" htmlFor="descripcion" error={errors.descripcion?.message}>
           <Input id="descripcion" invalido={!!errors.descripcion} {...register('descripcion')} />
         </Field>

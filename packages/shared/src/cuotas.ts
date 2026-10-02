@@ -115,7 +115,7 @@ export function estadoVisible(estado: EstadoCuota, vencimiento: string, hoyISO =
   return vencimiento < hoyISO ? 'vencida' : 'pendiente';
 }
 
-export const ORIGENES_CUOTA = ['PARCELA', 'SOCIO', 'PLAN'] as const;
+export const ORIGENES_CUOTA = ['PARCELA', 'SOCIO', 'PLAN', 'ANTICIPO'] as const;
 export type OrigenCuota = (typeof ORIGENES_CUOTA)[number];
 
 
@@ -133,7 +133,7 @@ export const cuotaListarSchema = paginacionSchema.extend({
   periodo: mesSchema.optional(),
   /** `impaga` junta pendientes y vencidas: son las que se pueden cobrar. */
   estado: z.enum([...ESTADOS_CUOTA_VISIBLES, 'impaga', 'todas']).default('todas'),
-  /** Sin origen vienen las de parcela, las sociales y las de plan. */
+  /** Sin origen vienen todas: de parcela, sociales, de plan y anticipos. */
   origen: z.enum(ORIGENES_CUOTA).optional(),
   /** Loteo activo del sidebar. */
   loteoId: z.coerce.number().int().positive().optional(),
@@ -199,6 +199,8 @@ export function conceptoCuota(datos: {
   const periodo = etiquetaPeriodo(datos.periodo, datos.periodicidad);
   // La cuota social no cuelga de ninguna parcela: si no lo dice el concepto, no lo dice nada.
   if (datos.origen === 'SOCIO') return `Cuota social ${periodo}`;
+  // El anticipo es un pago único: su período es solo el mes en que se asignó la parcela.
+  if (datos.origen === 'ANTICIPO') return 'Anticipo de entrada';
   if (datos.origen === 'PARCELA' || !datos.plan) return periodo;
   const { numero, cuotaNumero, cantidadCuotas } = datos.plan;
   return cuotaNumero === 0

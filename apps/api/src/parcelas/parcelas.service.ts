@@ -199,6 +199,7 @@ export class ParcelasService {
       etiqueta: etiquetaParcela(p),
       sector: p.sector,
       superficieM2: p.superficieM2 === null ? null : Number(p.superficieM2),
+      importeCuota: p.importeCuota,
       descripcion: p.descripcion,
       estado: vigente ? 'asignada' : 'libre',
       titular: vigente ? { ...vigente.socio, desde: deFecha(vigente.desde) } : null,

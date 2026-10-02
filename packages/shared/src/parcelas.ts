@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { fechaSchema, hoy, paginacionSchema, textoOpcional } from './common';
-import { importeOpcionalSchema } from './dinero';
+import { aCentavos, importeOpcionalSchema, importeSchema } from './dinero';
 import { TOLERANCIA_VENCIDAS } from './planes';
 import type { CuotaListItem, EstadoCuenta } from './cuotas';
 import { mesDe, sumarMeses } from './periodos';
@@ -19,11 +19,32 @@ export interface LoteoResumen {
 export interface Loteo extends LoteoResumen {
   descripcion: string | null;
   direccion: string | null;
+  /** Cada parcela tiene su propio importe de cuota en lugar del de la tarifa. */
+  importePorParcela: boolean;
+  /** Al asignar una parcela libre se genera una cuota de anticipo de entrada. */
+  cobraAnticipo: boolean;
+  /** Centavos. Importe sugerido del anticipo, editable en cada asignación. */
+  importeAnticipo: number | null;
   sectores: number;
   parcelas: number;
   /** Un loteo con sectores no se puede eliminar. */
   puedeEliminar: boolean;
 }
+
+/** Importe opcional en centavos: vacío es null, no cero. */
+const importeNullableSchema = z
+  .union([z.string(), z.number()])
+  .nullish()
+  .transform((valor, ctx) => {
+    if (valor === null || valor === undefined || valor === '') return null;
+    const centavos = aCentavos(valor);
+    if (centavos === null) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Ingresá un importe válido, por ejemplo 1.500,50' });
+      return z.NEVER;
+    }
+    return centavos;
+  })
+  .pipe(z.number().int().positive('El importe debe ser mayor a 0').max(99_999_999_99, 'El importe es demasiado grande').nullable());
 
 export const loteoCrearSchema = z.object({
   nombre: z
@@ -33,6 +54,10 @@ export const loteoCrearSchema = z.object({
     .max(60, 'Máximo 60 caracteres'),
   descripcion: textoOpcional(200),
   direccion: textoOpcional(160),
+  importePorParcela: z.boolean().default(false),
+  cobraAnticipo: z.boolean().default(false),
+  /** Sugerido. Solo cuenta si el loteo cobra anticipo. */
+  importeAnticipo: importeNullableSchema,
 });
 export type LoteoCrearInput = z.input<typeof loteoCrearSchema>;
 export type LoteoCrear = z.output<typeof loteoCrearSchema>;
@@ -105,6 +130,8 @@ export const parcelaCrearSchema = z.object({
       .max(9_999_999, 'La superficie es demasiado grande')
       .nullable(),
   ),
+  /** Solo cuenta si el loteo de la parcela cobra por parcela. */
+  importeCuota: importeNullableSchema,
   descripcion: textoOpcional(200),
 });
 export type ParcelaCrearInput = z.input<typeof parcelaCrearSchema>;
@@ -169,6 +196,8 @@ export interface ParcelaListItem {
   etiqueta: string;
   sector: SectorResumen | null;
   superficieM2: number | null;
+  /** Centavos. Ver `Loteo.importePorParcela`. */
+  importeCuota: number | null;
   descripcion: string | null;
   estado: EstadoParcela;
   titular: (SocioResumen & { desde: string }) | null;
@@ -292,10 +321,25 @@ export const transferenciaListarSchema = paginacionSchema.extend({
 export type TransferenciaListarInput = z.input<typeof transferenciaListarSchema>;
 export type TransferenciaListar = z.output<typeof transferenciaListarSchema>;
 
-export const asignacionCrearSchema = z.object({
-  parcelaId: z.coerce.number({ invalid_type_error: 'Elegí una parcela' }).int().positive('Elegí una parcela'),
-  desde: fechaSchema.default(hoy),
-});
+export const asignacionCrearSchema = z
+  .object({
+    parcelaId: z.coerce.number({ invalid_type_error: 'Elegí una parcela' }).int().positive('Elegí una parcela'),
+    desde: fechaSchema.default(hoy),
+    /**
+     * Anticipo de entrada. Obligatorio si el loteo de la parcela lo cobra, y no se acepta si
+     * no: eso lo valida el servidor, que es el que sabe de qué loteo es la parcela.
+     */
+    anticipo: z
+      .object({
+        importe: importeSchema,
+        vencimiento: fechaSchema,
+      })
+      .optional(),
+  })
+  .refine((a) => !a.anticipo || a.anticipo.vencimiento >= a.desde, {
+    message: 'El vencimiento del anticipo no puede ser anterior a la asignación',
+    path: ['anticipo', 'vencimiento'],
+  });
 export type AsignacionCrearInput = z.input<typeof asignacionCrearSchema>;
 export type AsignacionCrear = z.output<typeof asignacionCrearSchema>;
 

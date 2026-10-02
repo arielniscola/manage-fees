@@ -203,7 +203,8 @@ export class TransferenciasService {
   ): Promise<number | null> {
     const corte = primerPeriodoDelNuevoTitular(datos.fecha);
     const impagas = await tx.cuota.findMany({
-      where: { parcelaId, origen: 'PARCELA', estado: 'PENDIENTE', periodo: { lt: corte } },
+      // El anticipo de entrada impago también es deuda de la parcela, igual que en `deuda`.
+      where: { parcelaId, origen: { in: ['PARCELA', 'ANTICIPO'] }, estado: 'PENDIENTE', periodo: { lt: corte } },
       select: { id: true, importe: true, vencimiento: true, estado: true, origen: true },
     });
     if (impagas.length === 0) return null;

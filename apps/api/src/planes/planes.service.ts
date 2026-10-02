@@ -125,7 +125,8 @@ export class PlanesService {
       const ajena = cuotas.find((c) => c.socioId !== datos.socioId);
       if (ajena) throw reglaIncumplida('Alguna de las cuotas no es de este socio', 'cuotaIds');
 
-      // Se refinancia deuda de las cuotas del período —sociales y de parcela—. Refinanciar
+      // Se refinancian cuotas impagas, vencidas o no: sociales, de parcela y anticipos de
+      // entrada. Refinanciar
       // una cuota de otro plan dejaría ese plan a medio camino y la deuda contada dos veces.
       const dePlan = cuotas.find((c) => c.origen === 'PLAN');
       if (dePlan) {

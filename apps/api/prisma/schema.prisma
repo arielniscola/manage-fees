@@ -69,6 +69,9 @@ model Parcela {
   sectorId     Int?
   /// Superficie del lote en metros cuadrados.
   superficieM2 Decimal?     @db.Decimal(10, 2)
+  /// Centavos. Solo se usa si el loteo de la parcela cobra por parcela: reemplaza el importe
+  /// de la tarifa. Null = paga el de la tarifa.
+  importeCuota Int?
   descripcion  String?
   asignaciones Asignacion[]
   cuotas       Cuota[]
@@ -88,6 +91,13 @@ model Loteo {
   nombre      String   @unique
   descripcion String?
   direccion   String?
+  /// El importe de la cuota de parcela lo pone cada parcela y no la tarifa. La tarifa sigue
+  /// definiendo periodicidad, vencimiento y vigencia.
+  importePorParcela Boolean @default(false)
+  /// Al asignar una parcela libre de este loteo se genera una cuota de anticipo de entrada.
+  cobraAnticipo     Boolean @default(false)
+  /// Centavos. Importe sugerido del anticipo; se puede cambiar en cada asignación.
+  importeAnticipo   Int?
   sectores    Sector[]
   tarifas     Tarifa[]
   createdAt   DateTime @default(now())
@@ -227,11 +237,13 @@ enum EstadoCuota {
 /// De dónde sale una cuota. `PARCELA` es el pago por la propiedad del terreno, una por
 /// parcela y período; `SOCIO` es la cuota social, una por socio y período, y solo la
 /// generan los socios que tienen parcela —los suplentes no pagan—; `PLAN` es una cuota
-/// de un plan de pago.
+/// de un plan de pago; `ANTICIPO` es el pago de entrada que se genera al asignar una
+/// parcela de un loteo que lo cobra, uno por asignación.
 enum OrigenCuota {
   PARCELA
   SOCIO
   PLAN
+  ANTICIPO
 }
 
 /// Cuota a cobrar. Con origen PARCELA sale de una parcela y un período, y se imputa al socio

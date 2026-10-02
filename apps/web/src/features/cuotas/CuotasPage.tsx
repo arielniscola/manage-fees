@@ -109,6 +109,7 @@ export function CuotasPage() {
             { valor: 'PARCELA', label: 'De parcela' },
             { valor: 'SOCIO', label: 'Sociales' },
             { valor: 'PLAN', label: 'De plan' },
+            { valor: 'ANTICIPO', label: 'Anticipos' },
           ]}
         />
       </div>

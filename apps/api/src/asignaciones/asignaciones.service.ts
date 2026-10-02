@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { AsignacionCrear, AsignacionLiberar } from '@mf/shared';
+import { mesDe, type AsignacionCrear, type AsignacionLiberar } from '@mf/shared';
 import { conflicto, noEncontrado, reglaIncumplida } from '../common/errores';
 import { aFecha, deFecha, deFechaNullable, fechaLegible } from '../common/fechas';
 import { esDuplicado, PrismaService } from '../prisma/prisma.module';
@@ -8,13 +8,18 @@ import { esDuplicado, PrismaService } from '../prisma/prisma.module';
 export class AsignacionesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async asignar(socioId: number, { parcelaId, desde }: AsignacionCrear) {
+  /**
+   * Si el loteo de la parcela cobra anticipo de entrada, la asignación lo trae y se genera
+   * su cuota en la misma transacción: o queda la parcela asignada con su anticipo, o nada.
+   */
+  async asignar(socioId: number, { parcelaId, desde, anticipo }: AsignacionCrear) {
     const [socio, parcela] = await Promise.all([
       this.prisma.socio.findUnique({ where: { id: socioId } }),
       this.prisma.parcela.findUnique({
         where: { id: parcelaId },
         include: {
           asignaciones: { orderBy: { desde: 'desc' }, take: 1, include: { socio: true } },
+          sector: { select: { loteo: { select: { nombre: true, cobraAnticipo: true } } } },
         },
       }),
     ]);
@@ -28,6 +33,14 @@ export class AsignacionesService {
       throw conflicto(`La parcela ${parcela.codigo} ya está asignada a ${titular}`, 'parcelaId');
     }
 
+    const loteo = parcela.sector?.loteo;
+    if (loteo?.cobraAnticipo && !anticipo) {
+      throw reglaIncumplida(`El loteo ${loteo.nombre} cobra anticipo de entrada: ingresá su importe`, 'anticipo.importe');
+    }
+    if (!loteo?.cobraAnticipo && anticipo) {
+      throw reglaIncumplida('El loteo de la parcela no cobra anticipo de entrada', 'anticipo.importe');
+    }
+
     const inicio = aFecha(desde);
     if (inicio < socio.fechaAlta) {
       throw reglaIncumplida(`La fecha no puede ser anterior al alta del socio (${fechaLegible(socio.fechaAlta)})`, 'desde');
@@ -39,6 +52,20 @@ export class AsignacionesService {
     try {
       const a = await this.prisma.$transaction(async (tx) => {
         const creada = await tx.asignacion.create({ data: { socioId, parcelaId, desde: inicio } });
+        if (anticipo) {
+          await tx.cuota.create({
+            data: {
+              origen: 'ANTICIPO',
+              socioId,
+              asignacionId: creada.id,
+              parcelaId,
+              periodo: mesDe(desde),
+              periodicidad: 'MENSUAL',
+              importe: anticipo.importe,
+              vencimiento: aFecha(anticipo.vencimiento),
+            },
+          });
+        }
         // Recibir una parcela convierte al suplente en titular: deja la lista de espera.
         if (socio.tipo === 'SUPLENTE') await tx.socio.update({ where: { id: socioId }, data: { tipo: 'TITULAR' } });
         return creada;

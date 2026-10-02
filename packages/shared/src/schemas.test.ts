@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
+  asignacionCrearSchema,
   cambiarPasswordSchema,
   cobroListarSchema,
   cuotaListarSchema,
   etiquetaParcela,
   hoy,
   loginSchema,
+  loteoActualizarSchema,
+  loteoCrearSchema,
+  parcelaActualizarSchema,
   parcelaCrearSchema,
   passwordNuevaSchema,
   planListarSchema,
@@ -58,9 +62,50 @@ describe('socioActualizarSchema', () => {
   });
 });
 
+describe('loteoCrearSchema', () => {
+  it('sin marcar, el loteo no cobra por parcela ni anticipo', () => {
+    const loteo = loteoCrearSchema.parse({ nombre: 'Lavalle' });
+    expect(loteo).toMatchObject({ importePorParcela: false, cobraAnticipo: false, importeAnticipo: null });
+  });
+
+  it('guarda el anticipo sugerido en centavos', () => {
+    expect(loteoCrearSchema.parse({ nombre: 'Lavalle', cobraAnticipo: true, importeAnticipo: '50.000' }).importeAnticipo).toBe(5_000_000);
+  });
+
+  it('al actualizar, no tocar las opciones no las apaga', () => {
+    const cambios = loteoActualizarSchema.parse({ nombre: 'Lavalle' });
+    expect(cambios.cobraAnticipo).toBeUndefined();
+    expect(cambios.importePorParcela).toBeUndefined();
+  });
+});
+
+describe('asignacionCrearSchema', () => {
+  it('el anticipo es opcional y viaja en centavos', () => {
+    expect(asignacionCrearSchema.parse({ parcelaId: 1, desde: '2026-10-01' }).anticipo).toBeUndefined();
+    const a = asignacionCrearSchema.parse({ parcelaId: 1, desde: '2026-10-01', anticipo: { importe: '50.000', vencimiento: '2026-10-10' } });
+    expect(a.anticipo).toEqual({ importe: 5_000_000, vencimiento: '2026-10-10' });
+  });
+
+  it('el anticipo no puede vencer antes de la asignación', () => {
+    const r = asignacionCrearSchema.safeParse({ parcelaId: 1, desde: '2026-10-05', anticipo: { importe: '1000', vencimiento: '2026-10-01' } });
+    expect(r.success).toBe(false);
+    if (!r.success) expect(r.error.issues[0].path).toEqual(['anticipo', 'vencimiento']);
+  });
+});
+
 describe('parcelaCrearSchema', () => {
   it('pasa el código a mayúsculas', () => {
     expect(parcelaCrearSchema.parse({ codigo: ' a-12 ' }).codigo).toBe('A-12');
+  });
+
+  it('guarda el importe propio en centavos y lo deja en null si viene vacío', () => {
+    expect(parcelaCrearSchema.parse({ codigo: '1', importeCuota: '3.500,50' }).importeCuota).toBe(350050);
+    expect(parcelaCrearSchema.parse({ codigo: '1', importeCuota: '' }).importeCuota).toBeNull();
+    expect(parcelaCrearSchema.safeParse({ codigo: '1', importeCuota: '0' }).success).toBe(false);
+  });
+
+  it('al actualizar, no tocar el importe no lo borra', () => {
+    expect(parcelaActualizarSchema.parse({ codigo: '1' })).not.toHaveProperty('importeCuota');
   });
 });
 

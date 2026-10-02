@@ -4,8 +4,10 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Check, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import {
+  aCentavos,
   asignacionLiberarSchema,
   hoy,
+  pesos,
   socioBajaSchema,
   type AsignacionDeSocio,
   type AsignacionLiberar,
@@ -22,7 +24,7 @@ import { ApiError } from '@/lib/api';
 import { cn } from '@/lib/cn';
 import { fecha, nombreCompleto } from '@/lib/formato';
 import { useDebounce } from '@/lib/hooks';
-import { useParcelas } from '../parcelas/api';
+import { useLoteos, useParcelas } from '../parcelas/api';
 import { useAsignarParcela, useBajaSocio, useLiberarParcela } from './api';
 
 interface DialogoSocio {
@@ -86,30 +88,60 @@ export function BajaSocioDialog({ socio, abierto, onAbiertoChange }: DialogoSoci
   );
 }
 
+const CAMPOS_ASIGNACION = ['parcelaId', 'desde', 'anticipo.importe', 'anticipo.vencimiento'] as const;
+type CampoAsignacion = (typeof CAMPOS_ASIGNACION)[number];
+
 export function AsignarParcelaDialog({ socio, abierto, onAbiertoChange }: DialogoSocio) {
   const asignar = useAsignarParcela(socio.id);
   const [texto, setTexto] = useState('');
   const [parcelaId, setParcelaId] = useState<number | null>(null);
   const [desde, setDesde] = useState(hoy());
-  const [errores, setErrores] = useState<{ parcelaId?: string; desde?: string }>({});
+  const [importeAnticipo, setImporteAnticipo] = useState('');
+  const [vencimientoAnticipo, setVencimientoAnticipo] = useState(hoy());
+  const [errores, setErrores] = useState<Partial<Record<CampoAsignacion, string>>>({});
   const q = useDebounce(texto);
   const { loteoId } = useLoteoActivo();
   const libres = useParcelas({ estado: 'libre', q: q || undefined, loteoId, pageSize: 8 }, { enabled: abierto });
+  const { data: loteos = [] } = useLoteos();
+
+  // Si el loteo de la parcela elegida cobra anticipo de entrada, se pide junto con la asignación.
+  const elegida = libres.data?.items.find((p) => p.id === parcelaId);
+  const loteoElegido = loteos.find((l) => l.id === elegida?.sector?.loteo?.id);
 
   useEffect(() => {
     if (abierto) {
       setTexto('');
       setParcelaId(null);
       setDesde(hoy());
+      setVencimientoAnticipo(hoy());
       setErrores({});
     }
   }, [abierto]);
 
+  // Al cambiar de parcela se precarga el importe sugerido de su loteo.
+  useEffect(() => {
+    setImporteAnticipo(loteoElegido?.importeAnticipo ? pesos(loteoElegido.importeAnticipo, { simbolo: false }) : '');
+  }, [loteoElegido]);
+
+  const cambiarDesde = (valor: string) => {
+    // El vencimiento acompaña a la fecha de asignación mientras nadie lo haya movido a mano.
+    if (vencimientoAnticipo === desde) setVencimientoAnticipo(valor);
+    setDesde(valor);
+  };
+
   const confirmar = () => {
     if (!parcelaId) return setErrores({ parcelaId: 'Elegí una parcela' });
     if (!desde) return setErrores({ desde: 'Ingresá una fecha' });
+    let anticipo: { importe: string; vencimiento: string } | undefined;
+    if (loteoElegido?.cobraAnticipo) {
+      const importe = aCentavos(importeAnticipo);
+      if (importe === null || importe <= 0) return setErrores({ 'anticipo.importe': 'Ingresá el importe del anticipo' });
+      if (!vencimientoAnticipo) return setErrores({ 'anticipo.vencimiento': 'Ingresá el vencimiento' });
+      if (vencimientoAnticipo < desde) return setErrores({ 'anticipo.vencimiento': 'No puede ser anterior a la asignación' });
+      anticipo = { importe: importeAnticipo, vencimiento: vencimientoAnticipo };
+    }
     asignar.mutate(
-      { parcelaId, desde },
+      { parcelaId, desde, anticipo },
       {
         onSuccess: () => {
           const cual = libres.data?.items.find((p) => p.id === parcelaId)?.etiqueta;
@@ -117,7 +149,8 @@ export function AsignarParcelaDialog({ socio, abierto, onAbiertoChange }: Dialog
           onAbiertoChange(false);
         },
         onError: (e) => {
-          if (e instanceof ApiError && (e.field === 'parcelaId' || e.field === 'desde')) setErrores({ [e.field]: e.message });
+          const campo = e instanceof ApiError ? CAMPOS_ASIGNACION.find((c) => c === e.field) : undefined;
+          if (campo) setErrores({ [campo]: e.message });
           else toast.error(e.message);
         },
       },
@@ -194,8 +227,36 @@ export function AsignarParcelaDialog({ socio, abierto, onAbiertoChange }: Dialog
           {errores.parcelaId && <span role="alert" className="text-xs text-mor">{errores.parcelaId}</span>}
         </div>
         <Field label="Asignada desde" htmlFor="desde" requerido error={errores.desde} ayuda={`No puede ser anterior al alta del socio (${fecha(socio.fechaAlta)})`}>
-          <Input id="desde" type="date" value={desde} min={socio.fechaAlta} onChange={(e) => setDesde(e.target.value)} invalido={!!errores.desde} />
+          <Input id="desde" type="date" value={desde} min={socio.fechaAlta} onChange={(e) => cambiarDesde(e.target.value)} invalido={!!errores.desde} />
         </Field>
+        {loteoElegido?.cobraAnticipo && (
+          <div className="grid grid-cols-1 gap-4 rounded-control border border-borde bg-superficie-2 p-4 sm:grid-cols-2">
+            <p className="text-[13px] text-tenue sm:col-span-2">
+              El loteo {loteoElegido.nombre} cobra anticipo de entrada. Se genera como una cuota más del socio.
+            </p>
+            <Field label="Importe del anticipo" htmlFor="anticipo-importe" requerido error={errores['anticipo.importe']}>
+              <Input
+                id="anticipo-importe"
+                inputMode="decimal"
+                className="tabular"
+                placeholder="0,00"
+                value={importeAnticipo}
+                onChange={(e) => setImporteAnticipo(e.target.value)}
+                invalido={!!errores['anticipo.importe']}
+              />
+            </Field>
+            <Field label="Vencimiento" htmlFor="anticipo-vencimiento" requerido error={errores['anticipo.vencimiento']}>
+              <Input
+                id="anticipo-vencimiento"
+                type="date"
+                value={vencimientoAnticipo}
+                min={desde}
+                onChange={(e) => setVencimientoAnticipo(e.target.value)}
+                invalido={!!errores['anticipo.vencimiento']}
+              />
+            </Field>
+          </div>
+        )}
       </div>
     </Dialog>
   );

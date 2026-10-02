@@ -148,6 +148,10 @@ describe('conceptoCuota', () => {
     expect(conceptoCuota({ ...base, origen: 'PARCELA' })).toBe('septiembre 2026');
   });
 
+  it('el anticipo de entrada es un pago único: no lleva período', () => {
+    expect(conceptoCuota({ ...base, origen: 'ANTICIPO' })).toBe('Anticipo de entrada');
+  });
+
   it('la de un plan dice qué cuota del plan es', () => {
     const plan = { id: 1, numero: 7, cuotaNumero: 2, cantidadCuotas: 6 };
     expect(conceptoCuota({ ...base, origen: 'PLAN', plan })).toBe('Cuota 2 de 6 del plan 00007');

@@ -33,7 +33,8 @@ interface Props {
 }
 
 /**
- * Arma un plan de pago: se eligen las cuotas impagas a refinanciar y el plan genera
+ * Arma un plan de pago: se eligen las cuotas impagas a refinanciar, vencidas o no —también
+ * el anticipo de entrada de una parcela—, y el plan genera
  * cuotas nuevas por el mismo total. La simulación usa la misma función que la API,
  * así lo que se ve acá es exactamente lo que se guarda.
  */
@@ -78,7 +79,7 @@ export function NuevoPlanDialog({ abierto, onAbiertoChange, socio, onCreado }: P
   }
 
   if (!elegido) {
-    return <ElegirMorosoDialog abierto={abierto} onAbiertoChange={onAbiertoChange} onElegir={setElegido} />;
+    return <ElegirSocioDialog abierto={abierto} onAbiertoChange={onAbiertoChange} onElegir={setElegido} />;
   }
 
   return (
@@ -96,7 +97,7 @@ export function NuevoPlanDialog({ abierto, onAbiertoChange, socio, onCreado }: P
   );
 }
 
-function ElegirMorosoDialog({
+function ElegirSocioDialog({
   abierto,
   onAbiertoChange,
   onElegir,
@@ -108,7 +109,7 @@ function ElegirMorosoDialog({
   const [texto, setTexto] = useState('');
   const q = useDebounce(texto);
   const { loteoId } = useLoteoActivo();
-  const { data } = useSocios({ q: q || undefined, estado: 'moroso', loteoId, page: 1, pageSize: 8 });
+  const { data } = useSocios({ q: q || undefined, estado: 'con_deuda', loteoId, page: 1, pageSize: 8 });
 
   return (
     <Dialog
@@ -116,20 +117,20 @@ function ElegirMorosoDialog({
       onAbiertoChange={onAbiertoChange}
       ancho="sm"
       titulo="Nuevo plan de pago"
-      descripcion="Elegí el socio moroso que va a refinanciar su deuda. Aparecen primero los que más deben."
+      descripcion="Elegí el socio que va a refinanciar su deuda, vencida o por vencer. Aparecen primero los que más deben."
     >
       <div className="flex flex-col gap-4">
         <div className="relative">
           <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-tenue" />
           <Input
-            id="buscar-moroso"
+            id="buscar-socio-plan"
             type="search"
             autoFocus
             value={texto}
             onChange={(e) => setTexto(e.target.value)}
             placeholder="Nombre, DNI, N° de socio o parcela"
             className="pl-10"
-            aria-label="Buscar socio moroso"
+            aria-label="Buscar socio con deuda"
           />
         </div>
 
@@ -138,7 +139,7 @@ function ElegirMorosoDialog({
             <p className="py-6 text-center text-sm text-tenue">Buscando…</p>
           ) : data.items.length === 0 ? (
             <p className="py-6 text-center text-sm text-tenue">
-              {q ? 'No hay socios en mora que coincidan.' : 'No hay socios con cuotas vencidas.'}
+              {q ? 'No hay socios con deuda que coincidan.' : 'No hay socios con cuotas impagas.'}
             </p>
           ) : (
             data.items.map((s) => (
@@ -156,7 +157,11 @@ function ElegirMorosoDialog({
                   </span>
                 </span>
                 <span className="flex flex-col items-end gap-0.5">
-                  <Badge tono="mor">{plural(s.estadoCuenta.vencidas, 'vencida')}</Badge>
+                  {s.estadoCuenta.vencidas > 0 ? (
+                    <Badge tono="mor">{plural(s.estadoCuenta.vencidas, 'vencida')}</Badge>
+                  ) : (
+                    <Badge tono="pend">{plural(s.estadoCuenta.pendientes, 'por vencer', 'por vencer')}</Badge>
+                  )}
                   <span className="text-xs tabular text-tenue">{pesos(s.estadoCuenta.deuda)}</span>
                 </span>
               </button>
@@ -192,13 +197,13 @@ function FormularioDePlan({
   const [observaciones, setObservaciones] = useState('');
   const crear = useCrearPlan();
 
-  // Solo se refinancia deuda de cuota social; las de otro plan quedan afuera.
+  // Se refinancia cualquier cuota impaga, vencida o no; las de otro plan quedan afuera.
   const { data, isPending, isError, error } = useCuotasDeSocio(socio.id, 'impaga', { enabled: abierto });
 
   const refinanciables = useMemo(
     () =>
       [...(data ?? [])]
-        // Se refinancia la deuda del período: la social y las de parcela. Las de otro plan no.
+        // La social, las de parcela y el anticipo de entrada. Las de otro plan no.
         .filter((c) => c.origen !== 'PLAN')
         .sort((a, b) => a.vencimiento.localeCompare(b.vencimiento)),
     [data],
@@ -300,7 +305,7 @@ function FormularioDePlan({
           <p className="py-6 text-center text-sm text-tenue">Cargando la deuda…</p>
         ) : refinanciables.length === 0 ? (
           <p className="rounded-control bg-ok-fondo px-4 py-6 text-center text-sm text-ok">
-            El socio no tiene cuotas sociales impagas para refinanciar.
+            El socio no tiene cuotas impagas para refinanciar.
           </p>
         ) : (
           <>
@@ -317,7 +322,7 @@ function FormularioDePlan({
                   />
                   {seleccion.length === refinanciables.length ? 'Quitar todas' : `Refinanciar las ${refinanciables.length}`}
                 </label>
-                <span className="text-xs text-tenue">Solo cuotas sociales impagas</span>
+                <span className="text-xs text-tenue">Cuotas impagas, vencidas o por vencer</span>
               </div>
               <div className="max-h-[220px] overflow-y-auto">
                 {refinanciables.map((c) => (

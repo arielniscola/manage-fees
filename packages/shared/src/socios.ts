@@ -127,10 +127,12 @@ export const socioListarSchema = paginacionSchema.extend({
   q: z.string().trim().optional(),
   /**
    * `moroso` son los socios activos con al menos una cuota vencida impaga, ordenados por
-   * deuda de mayor a menor: es el listado desde el que se arman los planes de pago.
+   * deuda de mayor a menor. `con_deuda` son los activos con alguna cuota impaga que se
+   * pueda refinanciar, vencida o no, en el mismo orden: es el listado desde el que se
+   * arman los planes de pago.
    * `suplente` son los que están en lista de espera para recibir una parcela.
    */
-  estado: z.enum(['activo', 'baja', 'moroso', 'suplente', 'todos']).default('activo'),
+  estado: z.enum(['activo', 'baja', 'moroso', 'con_deuda', 'suplente', 'todos']).default('activo'),
   /** Loteo activo del sidebar: deja solo los socios con parcela vigente en ese loteo. */
   loteoId: z.coerce.number().int().positive().optional(),
 });

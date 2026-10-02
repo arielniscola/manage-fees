@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Pencil, Plus, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { loteoCrearSchema, type Loteo, type LoteoCrear, type LoteoCrearInput } from '@mf/shared';
+import { loteoCrearSchema, pesos, type Loteo, type LoteoCrear, type LoteoCrearInput } from '@mf/shared';
 import { Button } from '@/components/ui/button';
 import { Vacio } from '@/components/ui/display';
 import { Dialog } from '@/components/ui/dialog';
@@ -80,6 +80,8 @@ export function LoteosDialog({ abierto, onAbiertoChange }: { abierto: boolean; o
                     <span className="text-xs text-tenue">
                       {l.sectores === 0 ? 'Sin sectores' : `${plural(l.sectores, 'sector', 'sectores')} · ${plural(l.parcelas, 'parcela')}`}
                       {l.direccion && ` · ${l.direccion}`}
+                      {l.importePorParcela && ' · Importe por parcela'}
+                      {l.cobraAnticipo && ` · Anticipo${l.importeAnticipo ? ` ${pesos(l.importeAnticipo)}` : ''}`}
                     </span>
                   </span>
                   <IconoBoton etiqueta={`Editar ${l.nombre}`} onClick={() => setEditando(l)}>
@@ -110,6 +112,7 @@ function Formulario({ loteo, onCerrar }: { loteo: Loteo | 'nuevo'; onCerrar: () 
     handleSubmit,
     reset,
     setError,
+    watch,
     formState: { errors },
   } = useForm<LoteoCrearInput, unknown, LoteoCrear>({ resolver: zodResolver(loteoCrearSchema) });
 
@@ -118,6 +121,9 @@ function Formulario({ loteo, onCerrar }: { loteo: Loteo | 'nuevo'; onCerrar: () 
       nombre: existente?.nombre ?? '',
       descripcion: existente?.descripcion ?? '',
       direccion: existente?.direccion ?? '',
+      importePorParcela: existente?.importePorParcela ?? false,
+      cobraAnticipo: existente?.cobraAnticipo ?? false,
+      importeAnticipo: existente?.importeAnticipo ? pesos(existente.importeAnticipo, { simbolo: false }) : '',
     });
   }, [loteo, existente, reset]);
 
@@ -155,6 +161,44 @@ function Formulario({ loteo, onCerrar }: { loteo: Loteo | 'nuevo'; onCerrar: () 
       <Field label="Descripción" htmlFor="loteo-descripcion" error={errors.descripcion?.message}>
         <Input id="loteo-descripcion" placeholder="Opcional" invalido={!!errors.descripcion} {...register('descripcion')} />
       </Field>
+      <label className="flex cursor-pointer items-start gap-3">
+        <input type="checkbox" className="mt-0.5 size-4 accent-pino-600" {...register('importePorParcela')} />
+        <span className="flex flex-col gap-0.5">
+          <span className="text-sm font-medium">Importe de la cuota por parcela</span>
+          <span className="text-[13px] text-tenue">
+            Cada parcela de este loteo paga el importe cargado en la parcela. La tarifa sigue definiendo la periodicidad
+            y el vencimiento, y su importe se usa para las parcelas que no tengan uno propio.
+          </span>
+        </span>
+      </label>
+      <label className="flex cursor-pointer items-start gap-3">
+        <input type="checkbox" className="mt-0.5 size-4 accent-pino-600" {...register('cobraAnticipo')} />
+        <span className="flex flex-col gap-0.5">
+          <span className="text-sm font-medium">Cobrar anticipo de entrada</span>
+          <span className="text-[13px] text-tenue">
+            Al asignar una parcela libre de este loteo se genera una cuota única de anticipo. Las transferencias no lo
+            cobran.
+          </span>
+        </span>
+      </label>
+      {watch('cobraAnticipo') && (
+        <Field
+          label="Importe sugerido del anticipo"
+          htmlFor="loteo-importeAnticipo"
+          error={errors.importeAnticipo?.message}
+          ayuda="Opcional. Se precarga al asignar y se puede cambiar en cada asignación."
+          className="sm:max-w-xs"
+        >
+          <Input
+            id="loteo-importeAnticipo"
+            inputMode="decimal"
+            className="tabular"
+            placeholder="0,00"
+            invalido={!!errors.importeAnticipo}
+            {...register('importeAnticipo')}
+          />
+        </Field>
+      )}
       <Button type="submit" tamanio="sm" cargando={guardar.isPending} className="self-start">
         {existente ? 'Guardar cambios' : 'Crear loteo'}
       </Button>

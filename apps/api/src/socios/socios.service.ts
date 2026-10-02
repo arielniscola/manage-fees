@@ -38,7 +38,8 @@ export class SociosService {
   ) {}
 
   async listar(filtros: SocioListar): Promise<Paginado<SocioListItem>> {
-    if (filtros.estado === 'moroso') return this.listarMorosos(filtros);
+    if (filtros.estado === 'moroso') return this.listarPorDeuda(filtros, { soloVencidas: true });
+    if (filtros.estado === 'con_deuda') return this.listarPorDeuda(filtros, { soloVencidas: false });
 
     const { q, estado, loteoId, page, pageSize } = filtros;
     const where: Prisma.SocioWhereInput = {
@@ -70,10 +71,14 @@ export class SociosService {
   }
 
   /**
-   * Socios con deuda vencida, del que más debe al que menos. La deuda se agrega primero
+   * Socios con deuda, del que más debe al que menos: la vencida para los morosos, o toda
+   * la impaga que se puede refinanciar para armar un plan. La deuda se agrega primero
    * sobre las cuotas y recién después se traen los socios de la página.
    */
-  private async listarMorosos({ q, loteoId, page, pageSize }: SocioListar): Promise<Paginado<SocioListItem>> {
+  private async listarPorDeuda(
+    { q, loteoId, page, pageSize }: SocioListar,
+    { soloVencidas }: { soloVencidas: boolean },
+  ): Promise<Paginado<SocioListItem>> {
     const where: Prisma.SocioWhereInput = {
       fechaBaja: null,
       ...(q && { OR: this.condicionesBusqueda(q) }),
@@ -92,7 +97,8 @@ export class SociosService {
         where: {
           socioId: { in: candidatos.map((s) => s.id) },
           estado: 'PENDIENTE',
-          vencimiento: { lt: aFecha(hoyISO) },
+          // Las cuotas de un plan no se vuelven a refinanciar: no cuentan para armar otro.
+          ...(soloVencidas ? { vencimiento: { lt: aFecha(hoyISO) } } : { origen: { not: 'PLAN' as const } }),
           // Con un loteo activo, moroso es quien debe en ese loteo, no en otro.
           ...cuotasDelLoteo(loteoId),
         },
