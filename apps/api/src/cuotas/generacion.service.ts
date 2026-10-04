@@ -35,6 +35,23 @@ type Cliente = Prisma.TransactionClient;
 /** Tope defensivo por asignación: sin él, una fecha disparatada podría generar millones de filas. */
 const MAX_PERIODOS = 600;
 
+/** Una parcela que paga su propio importe y no tiene tarifa de la que tomar el resto vence mensual, el 10. */
+const PERIODICIDAD_SIN_TARIFA: Periodicidad = 'MENSUAL';
+const DIA_VENCIMIENTO_SIN_TARIFA = 10;
+
+interface Alcance {
+  /** Mes desde el que se cobran también los períodos anteriores a la primera asignación de cada parcela. */
+  desde?: string;
+  loteoId?: number;
+  socioId?: number;
+}
+
+interface Calculo {
+  candidatas: Candidata[];
+  /** Parcelas de loteos que cobran por parcela que quedaron afuera por no tener su importe cargado. */
+  parcelasSinImporte: number;
+}
+
 @Injectable()
 export class GeneracionService {
   private readonly log = new Logger('Cuotas');
@@ -50,17 +67,29 @@ export class GeneracionService {
    * índices únicos (parcela + período y socio + período) como última red si dos procesos
    * corren a la vez.
    */
-  async generar({ hasta, simular }: GenerarCuotas): Promise<ResultadoGeneracion> {
+  async generar({ hasta, desde, loteoId, simular }: GenerarCuotas): Promise<ResultadoGeneracion> {
     const tarifas = await this.prisma.tarifa.findMany({ orderBy: { vigenteDesde: 'asc' } });
     const porAlcance = {
       PARCELA: tarifas.filter((t) => t.alcance === 'PARCELA'),
       SOCIO: tarifas.filter((t) => t.alcance === 'SOCIO'),
     };
-    if (tarifas.length === 0) {
-      return { hasta, simulado: simular, periodos: [], cuotas: 0, importe: 0, socios: 0, yaExistian: 0, sinTarifa: true };
+
+    // Sin tarifas igual puede haber algo para generar: las parcelas que pagan su propio importe.
+    const { candidatas, parcelasSinImporte } = await this.calcular(porAlcance, hasta, this.prisma, { desde, loteoId });
+    if (tarifas.length === 0 && candidatas.length === 0 && parcelasSinImporte === 0) {
+      return {
+        hasta,
+        simulado: simular,
+        periodos: [],
+        cuotas: 0,
+        importe: 0,
+        socios: 0,
+        yaExistian: 0,
+        sinTarifa: true,
+        parcelasSinImporte: 0,
+      };
     }
 
-    const candidatas = await this.calcular(porAlcance, hasta, this.prisma);
     const existentes = await this.clavesExistentes(candidatas, this.prisma);
     const nuevas = candidatas.filter((c) => !existentes.has(clave(c)));
 
@@ -78,6 +107,7 @@ export class GeneracionService {
       socios: new Set(nuevas.map((c) => c.socioId)).size,
       yaExistian: candidatas.length - nuevas.length,
       sinTarifa: false,
+      parcelasSinImporte,
     };
   }
 
@@ -86,6 +116,9 @@ export class GeneracionService {
     const resultado = await this.generar({ hasta: hoy(), simular: false });
     if (resultado.sinTarifa) this.log.warn('No hay ninguna tarifa configurada: no se generaron cuotas');
     else if (resultado.cuotas === 0) this.log.log('No había cuotas pendientes de generar');
+    if (resultado.parcelasSinImporte > 0) {
+      this.log.warn(`${resultado.parcelasSinImporte} parcelas de loteos que cobran por parcela no tienen su importe cargado`);
+    }
     return resultado;
   }
 
@@ -99,14 +132,12 @@ export class GeneracionService {
    */
   async candidatasDeSocio(socioId: number, hastaMes: string, db: Cliente = this.prisma): Promise<Candidata[]> {
     const tarifas = await db.tarifa.findMany({ orderBy: { vigenteDesde: 'asc' } });
-    if (tarifas.length === 0) return [];
-
     const porAlcance = {
       PARCELA: tarifas.filter((t) => t.alcance === 'PARCELA'),
       SOCIO: tarifas.filter((t) => t.alcance === 'SOCIO'),
     };
     const desde = mesActual();
-    const candidatas = (await this.calcular(porAlcance, primerDia(hastaMes), db, socioId)).filter(
+    const candidatas = (await this.calcular(porAlcance, primerDia(hastaMes), db, { socioId })).candidatas.filter(
       (c) => c.periodo > desde && c.socioId === socioId,
     );
     const existentes = await this.clavesExistentes(candidatas, db);
@@ -117,12 +148,17 @@ export class GeneracionService {
     tarifas: Record<AlcanceTarifa, Tarifa[]>,
     hasta: string,
     db: Cliente,
-    socioId?: number,
-  ): Promise<Candidata[]> {
+    { desde, loteoId, socioId }: Alcance = {},
+  ): Promise<Calculo> {
     const limite = mesDe(hasta);
 
-    const asignaciones = await db.asignacion.findMany({
-      where: { desde: { lte: aFecha(hasta) }, ...(socioId && { socioId }) },
+    const encontradas = await db.asignacion.findMany({
+      where: {
+        // Retrotrayendo, también cuenta la parcela asignada después de `hasta`: sus meses previos se cobran.
+        ...(!desde && { desde: { lte: aFecha(hasta) } }),
+        ...(socioId && { socioId }),
+        ...(loteoId && { parcela: { sector: { loteoId } } }),
+      },
       select: {
         id: true,
         socioId: true,
@@ -137,21 +173,24 @@ export class GeneracionService {
       // la cuota queda a nombre de quien era titular cuando el período empezó.
       orderBy: [{ desde: 'asc' }, { id: 'asc' }],
     });
+    const asignaciones = desde ? retrotraer(encontradas, desde) : encontradas;
 
-    return [
-      ...this.cuotasDeParcela(tarifas.PARCELA, asignaciones, limite),
-      ...this.cuotasSociales(tarifas.SOCIO, asignaciones, limite),
-    ];
+    const deParcela = this.cuotasDeParcela(tarifas.PARCELA, asignaciones, limite);
+    return {
+      candidatas: [...deParcela.candidatas, ...this.cuotasSociales(tarifas.SOCIO, asignaciones, limite)],
+      parcelasSinImporte: deParcela.parcelasSinImporte,
+    };
   }
 
   /**
    * Una cuota por parcela asignada y período, a nombre del titular de ese momento. El
    * importe sale de la tarifa del loteo de la parcela si tiene una, o de la general. Si el
    * loteo cobra por parcela y la parcela tiene su importe cargado, se usa ese: la tarifa
-   * sigue poniendo la periodicidad, el vencimiento y desde cuándo se cobra.
+   * sigue poniendo la periodicidad y el vencimiento si el loteo tiene una, pero no hace
+   * falta: sin tarifa, la parcela con importe propio se cobra igual, mensual, desde que se
+   * asignó.
    */
-  private cuotasDeParcela(tarifas: Tarifa[], asignaciones: Asignacion[], limite: string): Candidata[] {
-    if (tarifas.length === 0) return [];
+  private cuotasDeParcela(tarifas: Tarifa[], asignaciones: Asignacion[], limite: string): Calculo {
     const general = tarifas.filter((t) => t.loteoId === null);
     const porLoteo = new Map<number, Tarifa[]>();
     for (const t of tarifas) {
@@ -169,13 +208,18 @@ export class GeneracionService {
 
     const candidatas: Candidata[] = [];
     const vistas = new Set<string>();
+    const sinImporte = new Set<number>();
 
     for (const a of asignaciones) {
       const loteo = a.parcela.sector?.loteo ?? null;
       const cadena = cadenaDe(loteo?.id ?? null);
       const importePropio = loteo?.importePorParcela ? a.parcela.importeCuota : null;
-      if (cadena.length === 0) continue;
-      const primerMes = mesVigencia(cadena[0]);
+      if (importePropio === null && cadena.length === 0) {
+        if (loteo?.importePorParcela) sinImporte.add(a.parcelaId);
+        continue;
+      }
+      // Con importe propio la tarifa no limita desde cuándo se cobra: no hace falta para valorizarla.
+      const primerMes = importePropio === null ? mesVigencia(cadena[0]) : null;
       for (const { periodo, tarifa } of this.periodos(cadena, a, limite, primerMes)) {
         const k = `PARCELA|${a.parcelaId}|${periodo}`;
         if (vistas.has(k)) continue;
@@ -184,16 +228,17 @@ export class GeneracionService {
           asignacionId: a.id,
           socioId: a.socioId,
           parcelaId: a.parcelaId,
-          tarifaId: tarifa.id,
+          tarifaId: tarifa?.id ?? null,
           periodo,
-          periodicidad: tarifa.periodicidad,
-          importe: importePropio ?? tarifa.importe,
-          vencimiento: aFecha(vencimientoDe(periodo, tarifa.diaVencimiento)),
+          periodicidad: tarifa?.periodicidad ?? PERIODICIDAD_SIN_TARIFA,
+          // Sin importe propio siempre hay tarifa: el primer período es el de la primera.
+          importe: importePropio ?? tarifa!.importe,
+          vencimiento: aFecha(vencimientoDe(periodo, tarifa?.diaVencimiento ?? DIA_VENCIMIENTO_SIN_TARIFA)),
           origen: 'PARCELA',
         });
       }
     }
-    return candidatas;
+    return { candidatas, parcelasSinImporte: sinImporte.size };
   }
 
   /**
@@ -249,21 +294,32 @@ export class GeneracionService {
     return candidatas;
   }
 
-  /** Los períodos que le corresponden a una asignación, con la tarifa que rige en cada uno. */
-  private *periodos(tarifas: Tarifa[], a: Asignacion, limite: string, primerMes: string) {
+  /**
+   * Los períodos que le corresponden a una asignación, con la tarifa que rige en cada uno,
+   * o null en los meses en que todavía no rige ninguna. Sin `primerMes` se cobra desde que
+   * empezó la asignación.
+   */
+  private *periodos(tarifas: Tarifa[], a: Asignacion, limite: string, primerMes: string | null) {
     const desde = mesDe(deFecha(a.desde));
     const cierre = deFechaNullable(a.hasta);
     const tope = cierre ? minimo(limite, mesDe(cierre)) : limite;
+    const periodicidadEn = (mes: string) => this.vigenteEn(tarifas, mes)?.periodicidad ?? PERIODICIDAD_SIN_TARIFA;
 
-    let cursor = inicioPeriodo(maximo(desde, primerMes), this.tarifaEn(tarifas, maximo(desde, primerMes)).periodicidad);
+    const inicio = primerMes ? maximo(desde, primerMes) : desde;
+    let cursor = inicioPeriodo(inicio, periodicidadEn(inicio));
     // Un período que arranca antes de la primera tarifa no se cobra: se empieza por el siguiente.
-    if (cursor < primerMes) cursor = sumarMeses(cursor, MESES_DE[this.tarifaEn(tarifas, cursor).periodicidad]);
+    if (primerMes && cursor < primerMes) cursor = sumarMeses(cursor, MESES_DE[this.tarifaEn(tarifas, cursor).periodicidad]);
 
     for (let n = 0; cursor <= tope && n < MAX_PERIODOS; n++) {
-      const tarifa = this.tarifaEn(tarifas, cursor);
+      const tarifa = this.vigenteEn(tarifas, cursor);
       yield { periodo: cursor, tarifa };
-      cursor = sumarMeses(cursor, MESES_DE[tarifa.periodicidad]);
+      cursor = sumarMeses(cursor, MESES_DE[tarifa?.periodicidad ?? PERIODICIDAD_SIN_TARIFA]);
     }
+  }
+
+  /** Como `tarifaEn`, pero null si en ese mes todavía no rige ninguna. */
+  private vigenteEn(tarifas: Tarifa[], mes: string): Tarifa | null {
+    return tarifas.length > 0 && mesVigencia(tarifas[0]) <= mes ? this.tarifaEn(tarifas, mes) : null;
   }
 
   /** La tarifa que rige en un mes: la última que empezó a regir en o antes de ese mes. */
@@ -307,13 +363,15 @@ export class GeneracionService {
   private resumirPorPeriodo(nuevas: Candidata[]): PeriodoGenerado[] {
     const porPeriodo = new Map<string, PeriodoGenerado>();
     for (const c of nuevas) {
-      const actual = porPeriodo.get(c.periodo);
+      const k = `${c.periodo}|${c.origen}`;
+      const actual = porPeriodo.get(k);
       if (actual) {
         actual.cantidad += 1;
         actual.importe += c.importe;
       } else {
-        porPeriodo.set(c.periodo, {
+        porPeriodo.set(k, {
           periodo: c.periodo,
+          origen: c.origen,
           etiqueta: etiquetaPeriodo(c.periodo, c.periodicidad),
           vencimiento: deFecha(c.vencimiento as Date),
           cantidad: 1,
@@ -321,7 +379,8 @@ export class GeneracionService {
         });
       }
     }
-    return [...porPeriodo.values()].sort((a, b) => a.periodo.localeCompare(b.periodo));
+    // 'PARCELA' < 'SOCIO': dentro de cada período van primero las de parcela.
+    return [...porPeriodo.values()].sort((a, b) => a.periodo.localeCompare(b.periodo) || a.origen.localeCompare(b.origen));
   }
 }
 
@@ -346,6 +405,22 @@ export function cadenaDeLoteo(general: Tarifa[], propias: Tarifa[] | undefined):
   if (!propias?.length) return general;
   const inicio = mesVigencia(propias[0]);
   return [...general.filter((t) => mesVigencia(t) < inicio), ...propias];
+}
+
+/**
+ * Lleva hasta `desde` el comienzo de la primera asignación de cada parcela, para cobrar
+ * también los meses anteriores a que se cargara. Las siguientes no se tocan: los meses de
+ * cada titular posterior ya están cubiertos. Espera las asignaciones de la más vieja a la
+ * más nueva.
+ */
+export function retrotraer<T extends { parcelaId: number; desde: Date }>(asignaciones: T[], desde: string): T[] {
+  const inicio = aFecha(primerDia(desde));
+  const vistas = new Set<number>();
+  return asignaciones.map((a) => {
+    if (vistas.has(a.parcelaId)) return a;
+    vistas.add(a.parcelaId);
+    return a.desde > inicio ? { ...a, desde: inicio } : a;
+  });
 }
 
 const clave = (c: Candidata) => (c.origen === 'SOCIO' ? `SOCIO|${c.socioId}|${c.periodo}` : `PARCELA|${c.parcelaId}|${c.periodo}`);

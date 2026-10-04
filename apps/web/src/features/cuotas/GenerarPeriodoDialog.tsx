@@ -7,20 +7,29 @@ import { Button } from '@/components/ui/button';
 import { Tabla, Td, Th } from '@/components/ui/display';
 import { Dialog } from '@/components/ui/dialog';
 import { Field, Input } from '@/components/ui/field';
+import { useLoteoActivo } from '@/layout/loteo-activo';
 import { fecha, plural } from '@/lib/formato';
 import { useGenerarCuotas, useVistaPreviaGeneracion } from './api';
 
 /**
  * Genera las cuotas que falten hasta una fecha. Siempre muestra primero la vista previa:
  * la generación es idempotente, pero conviene ver qué se va a crear antes de crearlo.
+ * Con un loteo activo en el sidebar, solo genera las de sus parcelas.
  */
 export function GenerarPeriodoDialog({ abierto, onAbiertoChange }: { abierto: boolean; onAbiertoChange: (v: boolean) => void }) {
+  const { loteoId } = useLoteoActivo();
   const [hasta, setHasta] = useState(hoy);
-  const previa = useVistaPreviaGeneracion(hasta, abierto && /^\d{4}-\d{2}-\d{2}$/.test(hasta));
+  const [desde, setDesde] = useState('');
+  const filtros = { hasta, desde: desde || undefined, loteoId };
+  const valido = /^\d{4}-\d{2}-\d{2}$/.test(hasta) && (!desde || /^\d{4}-\d{2}$/.test(desde));
+  const previa = useVistaPreviaGeneracion(filtros, abierto && valido);
   const generar = useGenerarCuotas();
 
   useEffect(() => {
-    if (abierto) setHasta(hoy());
+    if (abierto) {
+      setHasta(hoy());
+      setDesde('');
+    }
   }, [abierto]);
 
   const nada = previa.data && !previa.data.sinTarifa && previa.data.cuotas === 0;
@@ -30,7 +39,7 @@ export function GenerarPeriodoDialog({ abierto, onAbiertoChange }: { abierto: bo
       abierto={abierto}
       onAbiertoChange={onAbiertoChange}
       titulo="Generar período"
-      descripcion="Se crean las cuotas de cada parcela asignada cuyo período ya haya empezado. Generar dos veces lo mismo no duplica nada."
+      descripcion={`Se crean las cuotas de cada parcela asignada${loteoId ? ' del loteo elegido' : ''} cuyo período ya haya empezado. Generar dos veces lo mismo no duplica nada.`}
       pie={
         <>
           <Button variante="secundario" onClick={() => onAbiertoChange(false)}>
@@ -41,7 +50,7 @@ export function GenerarPeriodoDialog({ abierto, onAbiertoChange }: { abierto: bo
             disabled={!previa.data || previa.data.sinTarifa || previa.data.cuotas === 0}
             onClick={() =>
               generar.mutate(
-                { hasta, simular: false },
+                { ...filtros, simular: false },
                 {
                   onSuccess: (r) => {
                     toast.success(`Se generaron ${plural(r.cuotas, 'cuota')} para ${plural(r.socios, 'socio')}`);
@@ -58,14 +67,30 @@ export function GenerarPeriodoDialog({ abierto, onAbiertoChange }: { abierto: bo
       }
     >
       <div className="flex flex-col gap-5">
-        <Field
-          label="Generar hasta"
-          htmlFor="generar-hasta"
-          ayuda="Se incluyen los períodos que hayan empezado en esta fecha o antes."
-          className="max-w-[220px]"
-        >
-          <Input id="generar-hasta" type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} className="tabular" />
-        </Field>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field
+            label="Generar hasta"
+            htmlFor="generar-hasta"
+            ayuda="Se incluyen los períodos que hayan empezado en esta fecha o antes."
+          >
+            <Input id="generar-hasta" type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} className="tabular" />
+          </Field>
+          <Field
+            label="Cobrar desde (opcional)"
+            htmlFor="generar-desde"
+            ayuda="Genera también los meses anteriores a la asignación, desde este mes, a nombre del primer titular."
+          >
+            <Input id="generar-desde" type="month" value={desde} onChange={(e) => setDesde(e.target.value)} className="tabular" />
+          </Field>
+        </div>
+
+        {previa.data && previa.data.parcelasSinImporte > 0 && (
+          <Aviso tono="pend" icono={<AlertCircle />}>
+            {plural(previa.data.parcelasSinImporte, 'parcela')} de loteos que cobran por parcela no{' '}
+            {previa.data.parcelasSinImporte === 1 ? 'tiene' : 'tienen'} su importe cargado, así que no se{' '}
+            {previa.data.parcelasSinImporte === 1 ? 'genera' : 'generan'}. Cargalo en cada parcela.
+          </Aviso>
+        )}
 
         {previa.isPending ? (
           <p className="py-6 text-center text-sm text-tenue">Calculando…</p>
@@ -79,6 +104,11 @@ export function GenerarPeriodoDialog({ abierto, onAbiertoChange }: { abierto: bo
             </Link>{' '}
             para poder generar.
           </Aviso>
+        ) : previa.data.cuotas === 0 && previa.data.yaExistian === 0 ? (
+          <Aviso tono="pend" icono={<AlertCircle />}>
+            No hay cuotas para este rango: ninguna parcela estaba asignada entonces.
+            {!desde && ' Si se asignaron después, elegí desde qué mes cobrarlas en «Cobrar desde».'}
+          </Aviso>
         ) : previa.data.cuotas === 0 ? (
           <Aviso tono="ok" icono={<CheckCircle2 />}>
             No hay nada pendiente: las {plural(previa.data.yaExistian, 'cuota')} de este rango ya estaban generadas.
@@ -90,6 +120,7 @@ export function GenerarPeriodoDialog({ abierto, onAbiertoChange }: { abierto: bo
                 <thead>
                   <tr>
                     <Th>Período</Th>
+                    <Th>Tipo</Th>
                     <Th>Vence</Th>
                     <Th className="text-right">Cuotas</Th>
                     <Th className="text-right">Importe</Th>
@@ -97,8 +128,14 @@ export function GenerarPeriodoDialog({ abierto, onAbiertoChange }: { abierto: bo
                 </thead>
                 <tbody>
                   {previa.data.periodos.map((p) => (
-                    <tr key={p.periodo}>
+                    <tr key={`${p.periodo}-${p.origen}`}>
                       <Td className="font-medium first-letter:uppercase">{p.etiqueta}</Td>
+                      <Td>
+                        {p.origen === 'PARCELA' ? 'De parcela' : 'Social'}
+                        <span className="block text-xs text-tenue">
+                          {p.origen === 'PARCELA' ? 'una por parcela' : 'una por socio'}
+                        </span>
+                      </Td>
                       <Td className="tabular text-tenue">{fecha(p.vencimiento)}</Td>
                       <Td className="text-right tabular">{p.cantidad}</Td>
                       <Td className="text-right tabular">{pesos(p.importe)}</Td>
@@ -106,6 +143,7 @@ export function GenerarPeriodoDialog({ abierto, onAbiertoChange }: { abierto: bo
                   ))}
                   <tr className="bg-superficie-2 font-semibold">
                     <Td>Total</Td>
+                    <Td />
                     <Td />
                     <Td className="text-right tabular">{previa.data.cuotas}</Td>
                     <Td className="text-right tabular">{pesos(previa.data.importe)}</Td>

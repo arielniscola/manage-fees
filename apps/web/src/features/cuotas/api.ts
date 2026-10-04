@@ -78,10 +78,10 @@ export function useAnularCuota() {
 }
 
 /** Vista previa de la generación: no escribe nada, solo cuenta qué falta. */
-export function useVistaPreviaGeneracion(hasta: string, habilitada: boolean) {
+export function useVistaPreviaGeneracion(filtros: Omit<GenerarCuotasInput, 'simular'>, habilitada: boolean) {
   return useQuery({
-    queryKey: ['cuotas', 'vista-previa', hasta],
-    queryFn: () => api.post<ResultadoGeneracion>('/cuotas/generar', { hasta, simular: true }),
+    queryKey: ['cuotas', 'vista-previa', filtros],
+    queryFn: () => api.post<ResultadoGeneracion>('/cuotas/generar', { ...filtros, simular: true }),
     enabled: habilitada,
     staleTime: 0,
     gcTime: 0,

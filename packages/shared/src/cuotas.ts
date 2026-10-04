@@ -131,6 +131,9 @@ export const cuotaListarSchema = paginacionSchema.extend({
   socioId: z.coerce.number().int().positive().optional(),
   parcelaId: z.coerce.number().int().positive().optional(),
   periodo: mesSchema.optional(),
+  /** Rango de vencimiento, con los dos extremos incluidos. */
+  venceDesde: fechaSchema.optional(),
+  venceHasta: fechaSchema.optional(),
   /** `impaga` junta pendientes y vencidas: son las que se pueden cobrar. */
   estado: z.enum([...ESTADOS_CUOTA_VISIBLES, 'impaga', 'todas']).default('todas'),
   /** Sin origen vienen todas: de parcela, sociales, de plan y anticipos. */
@@ -226,14 +229,25 @@ export interface EstadoCuenta {
 export const generarCuotasSchema = z.object({
   /** Se generan los períodos que hayan empezado hasta esta fecha. */
   hasta: fechaSchema.default(hoy),
+  /**
+   * Mes desde el que se generan también los períodos anteriores a la asignación: la
+   * parcela se cobra desde acá aunque se haya asignado después. Sin él, cada parcela se
+   * cobra desde que se asignó. Le toca al primer titular de la parcela.
+   */
+  desde: mesSchema.optional(),
+  /** Limita la generación a las parcelas de un loteo. */
+  loteoId: z.coerce.number().int().positive().optional(),
   /** Solo calcula y devuelve la vista previa, sin escribir nada. */
   simular: z.coerce.boolean().default(false),
 });
 export type GenerarCuotasInput = z.input<typeof generarCuotasSchema>;
 export type GenerarCuotas = z.output<typeof generarCuotasSchema>;
 
+/** Un renglón de la vista previa: las cuotas de un tipo en un período. */
 export interface PeriodoGenerado {
   periodo: string;
+  /** De parcela (una por parcela) o social (una por socio): cada una con su tarifa y su vencimiento. */
+  origen: 'PARCELA' | 'SOCIO';
   etiqueta: string;
   vencimiento: string;
   cantidad: number;
@@ -243,7 +257,7 @@ export interface PeriodoGenerado {
 export interface ResultadoGeneracion {
   hasta: string;
   simulado: boolean;
-  /** Períodos con cuotas nuevas, del más viejo al más nuevo. */
+  /** Períodos con cuotas nuevas, del más viejo al más nuevo; en cada uno, primero las de parcela. */
   periodos: PeriodoGenerado[];
   cuotas: number;
   importe: number;
@@ -252,4 +266,9 @@ export interface ResultadoGeneracion {
   yaExistian: number;
   /** No hay ninguna tarifa configurada: no se puede generar nada todavía. */
   sinTarifa: boolean;
+  /**
+   * Parcelas asignadas de loteos que cobran por parcela que no se pudieron generar: no
+   * tienen su importe cargado y el loteo no tiene tarifa de la que tomarlo.
+   */
+  parcelasSinImporte: number;
 }

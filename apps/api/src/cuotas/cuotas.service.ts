@@ -37,7 +37,19 @@ export class CuotasService {
     private readonly interes: InteresService,
   ) {}
 
-  async listar({ q, socioId, parcelaId, periodo, estado, origen, loteoId, page, pageSize }: CuotaListar): Promise<Paginado<CuotaListItem>> {
+  async listar({
+    q,
+    socioId,
+    parcelaId,
+    periodo,
+    venceDesde,
+    venceHasta,
+    estado,
+    origen,
+    loteoId,
+    page,
+    pageSize,
+  }: CuotaListar): Promise<Paginado<CuotaListItem>> {
     const hoyISO = hoy();
     const where: Prisma.CuotaWhereInput = {
       ...(socioId && { socioId }),
@@ -46,7 +58,16 @@ export class CuotasService {
       ...(origen && { origen }),
       ...this.filtroEstado(estado, hoyISO),
       ...(q && { OR: this.condicionesBusqueda(q) }),
-      ...cuotasDelLoteo(loteoId),
+      // El rango va en el AND, junto al loteo: el filtro de estado también puede acotar el vencimiento.
+      AND: [
+        cuotasDelLoteo(loteoId),
+        {
+          vencimiento: {
+            ...(venceDesde && { gte: aFecha(venceDesde) }),
+            ...(venceHasta && { lte: aFecha(venceHasta) }),
+          },
+        },
+      ],
     };
 
     const config = await this.interes.vigente();

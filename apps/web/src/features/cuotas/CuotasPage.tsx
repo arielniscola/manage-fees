@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link } from 'react-router';
-import { Ban, PlayCircle, Search, Settings2 } from 'lucide-react';
+import { Ban, CalendarDays, PlayCircle, Search, Settings2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   cuotaAnularSchema,
@@ -34,6 +34,10 @@ export function CuotasPage() {
   const filtros = useFiltrosUrl<EstadoFiltro>('todas', loteoId);
   const origenUrl = filtros.params.get('origen') as OrigenCuota | null;
   const origen: OrigenFiltro = origenUrl && ORIGENES_CUOTA.includes(origenUrl) ? origenUrl : 'todos';
+  // Solo se mandan los valores completos: un input a medio escribir no filtra.
+  const periodo = valorValido(filtros.params.get('periodo'), /^\d{4}-(0[1-9]|1[0-2])$/);
+  const venceDesde = valorValido(filtros.params.get('venceDesde'), /^\d{4}-\d{2}-\d{2}$/);
+  const venceHasta = valorValido(filtros.params.get('venceHasta'), /^\d{4}-\d{2}-\d{2}$/);
   const [texto, setTexto] = useState(filtros.q);
   const q = useDebounce(texto);
   const [generar, setGenerar] = useState(false);
@@ -47,12 +51,18 @@ export function CuotasPage() {
     q: filtros.q || undefined,
     estado: filtros.estado,
     origen: origen === 'todos' ? undefined : origen,
+    periodo,
+    venceDesde,
+    venceHasta,
     loteoId,
     page: filtros.page,
     pageSize: PAGE_SIZE,
   });
 
-  const filtrando = !!filtros.q || filtros.estado !== 'todas' || origen !== 'todos';
+  const porFecha = !!periodo || !!venceDesde || !!venceHasta;
+  // Con un filtro de fecha puesto (por ejemplo, al volver con la URL) arranca visible.
+  const [verFechas, setVerFechas] = useState(porFecha);
+  const filtrando = !!filtros.q || filtros.estado !== 'todas' || origen !== 'todos' || porFecha;
 
   return (
     <>
@@ -112,7 +122,57 @@ export function CuotasPage() {
             { valor: 'ANTICIPO', label: 'Anticipos' },
           ]}
         />
+        <Button
+          variante={verFechas || porFecha ? 'primario' : 'secundario'}
+          aria-expanded={verFechas}
+          aria-controls="filtros-fecha"
+          onClick={() => setVerFechas((v) => !v)}
+        >
+          <CalendarDays /> Fechas
+        </Button>
       </div>
+
+      {verFechas && (
+        <div id="filtros-fecha" className="flex flex-wrap items-end gap-3">
+          <Field label="Mes" htmlFor="filtro-periodo" className="w-[180px]">
+            <Input
+              id="filtro-periodo"
+              type="month"
+              value={filtros.params.get('periodo') ?? ''}
+              onChange={(e) => filtros.actualizar({ periodo: e.target.value })}
+              className="tabular"
+            />
+          </Field>
+          <Field label="Vence desde" htmlFor="filtro-vence-desde" className="w-[180px]">
+            <Input
+              id="filtro-vence-desde"
+              type="date"
+              value={filtros.params.get('venceDesde') ?? ''}
+              max={venceHasta}
+              onChange={(e) => filtros.actualizar({ venceDesde: e.target.value })}
+              className="tabular"
+            />
+          </Field>
+          <Field label="Vence hasta" htmlFor="filtro-vence-hasta" className="w-[180px]">
+            <Input
+              id="filtro-vence-hasta"
+              type="date"
+              value={filtros.params.get('venceHasta') ?? ''}
+              min={venceDesde}
+              onChange={(e) => filtros.actualizar({ venceHasta: e.target.value })}
+              className="tabular"
+            />
+          </Field>
+          {porFecha && (
+            <Button
+              variante="secundario"
+              onClick={() => filtros.actualizar({ periodo: undefined, venceDesde: undefined, venceHasta: undefined })}
+            >
+              Limpiar fechas
+            </Button>
+          )}
+        </div>
+      )}
 
       <Card className={isPlaceholderData ? 'opacity-70 transition-opacity' : undefined}>
         {isError ? (
@@ -214,6 +274,9 @@ export function CuotasPage() {
     </>
   );
 }
+
+const valorValido = (valor: string | null, formato: RegExp): string | undefined =>
+  valor && formato.test(valor) ? valor : undefined;
 
 function AnularCuotaDialog({ cuota, onCerrar }: { cuota: CuotaListItem | null; onCerrar: () => void }) {
   const anular = useAnularCuota();
