@@ -247,7 +247,7 @@ export function ParcelaFormDialog({ parcela, onCerrar }: { parcela: ParcelaListI
   const { data: loteos = [] } = useLoteos();
   const { loteoId: loteoActivo } = useLoteoActivo();
   const [loteo, setLoteo] = useState<string>(TODOS_LOS_LOTEOS);
-  const { register, handleSubmit, reset, setError, setValue, watch, formState: { errors } } = useForm<ParcelaCrearInput, unknown, ParcelaCrear>({
+  const { register, handleSubmit, reset, setError, setValue, watch, getValues, formState: { errors } } = useForm<ParcelaCrearInput, unknown, ParcelaCrear>({
     resolver: zodResolver(parcelaCrearSchema),
   });
 
@@ -285,8 +285,10 @@ export function ParcelaFormDialog({ parcela, onCerrar }: { parcela: ParcelaListI
   const loteoDelSector = loteos.find((l) => l.id === sectorElegido?.loteo?.id);
   const pideImporte = !!loteoDelSector?.importePorParcela;
 
-  const onSubmit = handleSubmit((datos) =>
-    guardar.mutate(datos, {
+  // Se manda lo que está escrito, no lo que devuelve el resolver: el importe que sale de zod
+  // ya está en centavos y el servidor lo vuelve a convertir (100 quedaría en 10.000).
+  const onSubmit = handleSubmit(() =>
+    guardar.mutate(getValues(), {
       onSuccess: (p) => {
         toast.success(existente ? `Parcela ${p.codigo} actualizada` : `Parcela ${p.codigo} creada`);
         onCerrar();

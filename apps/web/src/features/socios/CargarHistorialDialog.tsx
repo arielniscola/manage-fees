@@ -3,6 +3,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { toast } from 'sonner';
 import {
+  aCentavos,
   ETIQUETA_PERIODICIDAD,
   PERIODICIDADES,
   etiquetaTramo,
@@ -46,6 +47,7 @@ export function CargarHistorialDialog({
     reset,
     watch,
     setError,
+    getValues,
     formState: { errors },
   } = useForm<HistorialCrearInput, unknown, HistorialCrear>({
     resolver: zodResolver(historialCrearSchema),
@@ -87,11 +89,14 @@ export function CargarHistorialDialog({
   // Cuántas cuotas saldrían con lo que está escrito, para que no sea una sorpresa.
   const validos = /^\d{4}-\d{2}$/.test(desde ?? '') && /^\d{4}-\d{2}$/.test(hasta ?? '') && (hasta ?? '') >= (desde ?? '');
   const periodos = validos ? periodosEntre(desde!, hasta!, periodicidad, 241) : [];
-  const centavos = Number(importe.replace(/\./g, '').replace(',', '.')) * 100;
-  const total = Number.isFinite(centavos) && centavos > 0 ? Math.round(centavos) * periodos.length : 0;
+  // La misma lectura que hace el servidor: «1.500,50», «1500,5» y «1500.50» valen lo mismo.
+  const centavos = aCentavos(importe) ?? 0;
+  const total = centavos > 0 ? centavos * periodos.length : 0;
 
-  const onSubmit = handleSubmit((datos) =>
-    cargar.mutate(datos, {
+  // Se manda lo que está escrito, no lo que devuelve el resolver: el importe que sale de zod
+  // ya está en centavos y el servidor lo vuelve a convertir (100 quedaría en 10.000).
+  const onSubmit = handleSubmit(() =>
+    cargar.mutate(getValues(), {
       onSuccess: (r) => {
         toast.success(
           `${plural(r.creadas, 'cuota cargada', 'cuotas cargadas')} ${r.pagada ? 'como pagadas' : 'como adeudadas'}` +

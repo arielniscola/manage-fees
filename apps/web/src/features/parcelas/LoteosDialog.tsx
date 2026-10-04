@@ -113,6 +113,7 @@ function Formulario({ loteo, onCerrar }: { loteo: Loteo | 'nuevo'; onCerrar: () 
     reset,
     setError,
     watch,
+    getValues,
     formState: { errors },
   } = useForm<LoteoCrearInput, unknown, LoteoCrear>({ resolver: zodResolver(loteoCrearSchema) });
 
@@ -127,8 +128,10 @@ function Formulario({ loteo, onCerrar }: { loteo: Loteo | 'nuevo'; onCerrar: () 
     });
   }, [loteo, existente, reset]);
 
-  const onSubmit = handleSubmit((datos) =>
-    guardar.mutate(datos, {
+  // Se manda lo que está escrito, no lo que devuelve el resolver: el importe que sale de zod
+  // ya está en centavos y el servidor lo vuelve a convertir (100 quedaría en 10.000).
+  const onSubmit = handleSubmit(() =>
+    guardar.mutate(getValues(), {
       onSuccess: (l) => {
         toast.success(existente ? `Loteo «${l.nombre}» actualizado` : `Loteo «${l.nombre}» creado`);
         onCerrar();
