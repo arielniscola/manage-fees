@@ -43,6 +43,7 @@ interface Alcance {
   /** Mes desde el que se cobran también los períodos anteriores a la primera asignación de cada parcela. */
   desde?: string;
   loteoId?: number;
+  /** Solo las cuotas a nombre de este socio. */
   socioId?: number;
 }
 
@@ -67,7 +68,7 @@ export class GeneracionService {
    * índices únicos (parcela + período y socio + período) como última red si dos procesos
    * corren a la vez.
    */
-  async generar({ hasta, desde, loteoId, simular }: GenerarCuotas): Promise<ResultadoGeneracion> {
+  async generar({ hasta, desde, loteoId, socioId, simular }: GenerarCuotas): Promise<ResultadoGeneracion> {
     const tarifas = await this.prisma.tarifa.findMany({ orderBy: { vigenteDesde: 'asc' } });
     const porAlcance = {
       PARCELA: tarifas.filter((t) => t.alcance === 'PARCELA'),
@@ -75,7 +76,11 @@ export class GeneracionService {
     };
 
     // Sin tarifas igual puede haber algo para generar: las parcelas que pagan su propio importe.
-    const { candidatas, parcelasSinImporte } = await this.calcular(porAlcance, hasta, this.prisma, { desde, loteoId });
+    const { candidatas, parcelasSinImporte } = await this.calcular(porAlcance, hasta, this.prisma, {
+      desde,
+      loteoId,
+      socioId,
+    });
     if (tarifas.length === 0 && candidatas.length === 0 && parcelasSinImporte === 0) {
       return {
         hasta,
@@ -156,8 +161,12 @@ export class GeneracionService {
       where: {
         // Retrotrayendo, también cuenta la parcela asignada después de `hasta`: sus meses previos se cobran.
         ...(!desde && { desde: { lte: aFecha(hasta) } }),
-        ...(socioId && { socioId }),
-        ...(loteoId && { parcela: { sector: { loteoId } } }),
+        // Con un socio se traen todas las asignaciones de sus parcelas, no solo las suyas:
+        // retrotraer tiene que saber quién fue el primer titular de cada una.
+        parcela: {
+          ...(socioId && { asignaciones: { some: { socioId } } }),
+          ...(loteoId && { sector: { loteoId } }),
+        },
       },
       select: {
         id: true,
@@ -176,8 +185,9 @@ export class GeneracionService {
     const asignaciones = desde ? retrotraer(encontradas, desde) : encontradas;
 
     const deParcela = this.cuotasDeParcela(tarifas.PARCELA, asignaciones, limite);
+    const candidatas = [...deParcela.candidatas, ...this.cuotasSociales(tarifas.SOCIO, asignaciones, limite)];
     return {
-      candidatas: [...deParcela.candidatas, ...this.cuotasSociales(tarifas.SOCIO, asignaciones, limite)],
+      candidatas: socioId ? candidatas.filter((c) => c.socioId === socioId) : candidatas,
       parcelasSinImporte: deParcela.parcelasSinImporte,
     };
   }

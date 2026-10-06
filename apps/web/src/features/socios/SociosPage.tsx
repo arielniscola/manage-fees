@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
-import { ChevronRight, History, Plus, Search, Upload } from 'lucide-react';
+import { ChevronRight, History, Plus, Search, Trash2, Upload } from 'lucide-react';
+import type { SocioListItem } from '@mf/shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/field';
 import { Avatar, Badge, Card, Chips, ErrorCarga, FilasCargando, Paginacion, Tabla, Td, Th, Vacio } from '@/components/ui/display';
+import { AccionLoteDialog, BarraLote, CasillaFila, CasillaTodas, useSeleccion } from '@/components/ui/lotes';
 import { Encabezado } from '@/layout/AppLayout';
 import { useLoteoActivo } from '@/layout/loteo-activo';
 import { dni, fecha, iniciales, nombreCompleto, plural } from '@/lib/formato';
 import { useDebounce, useFiltrosUrl } from '@/lib/hooks';
 import { EstadoDeCuenta } from '@/features/cuotas/estados';
-import { useSocios } from './api';
+import { useEliminarSocios, useSocios } from './api';
 
 type EstadoFiltro = 'activo' | 'moroso' | 'suplente' | 'baja' | 'todos';
 const PAGE_SIZE = 20;
@@ -28,6 +30,8 @@ export function SociosPage() {
   const filtros = useFiltrosUrl<EstadoFiltro>('activo', loteoId);
   const [texto, setTexto] = useState(filtros.q);
   const q = useDebounce(texto);
+  const [eliminando, setEliminando] = useState(false);
+  const eliminar = useEliminarSocios();
 
   useEffect(() => {
     if (q !== filtros.q) filtros.actualizar({ q });
@@ -42,6 +46,7 @@ export function SociosPage() {
   });
 
   const buscando = !!filtros.q || filtros.estado !== 'activo';
+  const seleccion = useSeleccion<SocioListItem>({ q: filtros.q, estado: filtros.estado, loteoId });
 
   return (
     <>
@@ -116,9 +121,15 @@ export function SociosPage() {
           )
         ) : (
           <>
+            <BarraLote cantidad={seleccion.cantidad} onLimpiar={seleccion.limpiar}>
+              <Button variante="peligro" tamanio="sm" onClick={() => setEliminando(true)}>
+                <Trash2 /> Eliminar
+              </Button>
+            </BarraLote>
             <Tabla>
               <thead>
                 <tr>
+                  <CasillaTodas items={data?.items ?? []} seleccion={seleccion} />
                   <Th className="w-[72px]">N°</Th>
                   <Th>Socio</Th>
                   <Th>Parcelas</Th>
@@ -131,7 +142,7 @@ export function SociosPage() {
               </thead>
               <tbody>
                 {isPending ? (
-                  <FilasCargando columnas={8} />
+                  <FilasCargando columnas={9} />
                 ) : (
                   data.items.map((s) => (
                     <tr
@@ -139,6 +150,7 @@ export function SociosPage() {
                       onClick={() => navigate(`/socios/${s.id}`)}
                       className="cursor-pointer transition-colors hover:bg-superficie-2"
                     >
+                      <CasillaFila item={s} seleccion={seleccion} etiqueta={nombreCompleto(s)} />
                       <Td className="tabular text-tenue">{s.numero}</Td>
                       <Td>
                         <div className="flex items-center gap-3">
@@ -193,6 +205,22 @@ export function SociosPage() {
           </>
         )}
       </Card>
+
+      <AccionLoteDialog
+        abierto={eliminando}
+        onAbiertoChange={setEliminando}
+        titulo="Eliminar socios"
+        descripcion={`Se borran ${plural(seleccion.cantidad, 'socio')} con sus cuotas impagas y anuladas, y sus parcelas quedan libres. No se puede deshacer. Los que tengan cobros, cuotas pagadas, planes o transferencias no se borran: a esos hay que darlos de baja.`}
+        confirmar={`Eliminar ${plural(seleccion.cantidad, 'socio')}`}
+        cargando={eliminar.isPending}
+        onConfirmar={() => eliminar.mutateAsync(seleccion.elegidos.map((s) => s.id))}
+        etiquetaDe={(id) => {
+          const s = seleccion.elegidos.find((e) => e.id === id);
+          return s ? `${nombreCompleto(s)} (N° ${s.numero})` : `Socio ${id}`;
+        }}
+        hecho={['socio eliminado', 'socios eliminados']}
+        onTerminado={seleccion.limpiar}
+      />
     </>
   );
 }

@@ -31,24 +31,24 @@ export class TarifasService {
 
   /**
    * Historial completo, de la más nueva a la más vieja. Cada alcance —la cuota social y la
-   * de parcela— lleva el suyo, así que la vigente y el último período generado se calculan
-   * por separado para cada uno. La de parcela, además, tiene un historial general y uno
-   * por cada loteo con precio propio, cada uno con su vigente.
+   * de parcela— lleva el suyo, y la de parcela, además, tiene un historial general y uno
+   * por cada loteo con precio propio. La vigente y el último período generado se calculan
+   * por separado para cada historial.
    */
   async listar({ alcance }: TarifaListar = {}): Promise<TarifaDTO[]> {
-    const [tarifas, conteos, ultimoSocio, ultimoParcela] = await Promise.all([
+    const [tarifas, conteos] = await Promise.all([
       this.prisma.tarifa.findMany({
         where: alcance ? { alcance } : {},
         include: conLoteo,
         orderBy: [{ alcance: 'asc' }, { vigenteDesde: 'asc' }],
       }),
       this.prisma.cuota.groupBy({ by: ['tarifaId'], _count: { _all: true } }),
-      this.ultimoPeriodoGenerado('SOCIO'),
-      this.ultimoPeriodoGenerado('PARCELA'),
     ]);
 
     const porTarifa = new Map(conteos.map((c) => [c.tarifaId, c._count._all]));
-    const ultimoPeriodo = { SOCIO: ultimoSocio, PARCELA: ultimoParcela };
+    const historiales = [...new Map(tarifas.map((t) => [historial(t), t])).values()];
+    const ultimos = await Promise.all(historiales.map((t) => this.ultimoPeriodoGenerado(t.alcance, t.loteoId)));
+    const ultimoPeriodo = new Map(historiales.map((t, i) => [historial(t), ultimos[i]]));
     const hoy = mesActual();
     // La vigente de cada historial es la última que ya empezó a regir.
     const ultimaPorHistorial = new Map<string, number>();
@@ -60,7 +60,7 @@ export class TarifasService {
         this.aDTO(t, {
           vigente: vigentes.has(t.id),
           cuotas: porTarifa.get(t.id) ?? 0,
-          ultimoPeriodo: ultimoPeriodo[t.alcance],
+          ultimoPeriodo: ultimoPeriodo.get(historial(t)) ?? null,
         }),
       )
       .reverse();
@@ -75,7 +75,7 @@ export class TarifasService {
         throw noEncontrado('No existe el loteo');
       }
     }
-    await this.validarVigencia(data.alcance, data.vigenteDesde);
+    await this.validarVigencia(data.alcance, data.loteoId, data.vigenteDesde);
     try {
       await this.prisma.tarifa.create({
         data: {
@@ -98,7 +98,7 @@ export class TarifasService {
     const actual = await this.exigirEditable(id);
     // Ni el alcance ni el loteo se cambian: sería mover la tarifa de historial y pisar otro período.
     if (data.vigenteDesde && data.vigenteDesde !== mesVigencia(actual)) {
-      await this.validarVigencia(actual.alcance, data.vigenteDesde);
+      await this.validarVigencia(actual.alcance, actual.loteoId, data.vigenteDesde);
     }
 
     try {
@@ -123,25 +123,32 @@ export class TarifasService {
   }
 
   /**
-   * Período más nuevo con cuotas ya generadas de ese alcance, o null si todavía no se generó
-   * ninguna. La cuota social y la de parcela avanzan por separado.
+   * Período más nuevo ya generado que una tarifa de ese historial podría haber valorizado,
+   * o null si no hay ninguno. Cada historial avanza por separado: el general, con las
+   * cuotas que salieron de una tarifa general; el de un loteo, con las de sus parcelas que
+   * salieron de alguna tarifa, propia o general, porque su primera tarifa propia reemplaza
+   * a la general desde su mes. Las cuotas sin tarifa —las del historial del club y las de
+   * planes— no cuentan: ninguna tarifa las valorizó, así que no hay nada que pisar.
    */
-  async ultimoPeriodoGenerado(alcance: AlcanceTarifa): Promise<string | null> {
-    const { _max } = await this.prisma.cuota.aggregate({
-      where: { origen: alcance === 'SOCIO' ? 'SOCIO' : 'PARCELA' },
-      _max: { periodo: true },
-    });
+  async ultimoPeriodoGenerado(alcance: AlcanceTarifa, loteoId: number | null): Promise<string | null> {
+    const where: Prisma.CuotaWhereInput =
+      alcance === 'SOCIO'
+        ? { origen: 'SOCIO', tarifaId: { not: null } }
+        : loteoId === null
+          ? { origen: 'PARCELA', tarifa: { alcance: 'PARCELA', loteoId: null } }
+          : { origen: 'PARCELA', tarifaId: { not: null }, parcela: { sector: { loteoId } } };
+    const { _max } = await this.prisma.cuota.aggregate({ where, _max: { periodo: true } });
     return _max.periodo;
   }
 
   /**
-   * Una tarifa nueva no puede pisar períodos ya generados: un cambio de valor
-   * solo afecta a las cuotas futuras.
+   * Una tarifa nueva no puede pisar períodos ya generados de su historial: un cambio de
+   * valor solo afecta a las cuotas futuras.
    */
-  private async validarVigencia(alcance: AlcanceTarifa, mes: string): Promise<void> {
-    const ultimo = await this.ultimoPeriodoGenerado(alcance);
+  private async validarVigencia(alcance: AlcanceTarifa, loteoId: number | null, mes: string): Promise<void> {
+    const ultimo = await this.ultimoPeriodoGenerado(alcance, loteoId);
     if (ultimo && mes <= ultimo) {
-      const tarifa = await this.prisma.tarifa.findFirst({ where: { alcance }, orderBy: { vigenteDesde: 'desc' } });
+      const tarifa = await this.prisma.tarifa.findFirst({ where: { alcance, loteoId }, orderBy: { vigenteDesde: 'desc' } });
       const periodicidad = tarifa?.periodicidad ?? 'MENSUAL';
       throw reglaIncumplida(
         `Ya hay ${ETIQUETA_ALCANCE[alcance].toLowerCase()}s generadas hasta ${etiquetaPeriodo(ultimo, periodicidad)}. ` +
@@ -155,7 +162,7 @@ export class TarifasService {
     const tarifa = await this.prisma.tarifa.findUnique({ where: { id } });
     if (!tarifa) throw noEncontrado('No existe la tarifa');
 
-    const ultimo = await this.ultimoPeriodoGenerado(tarifa.alcance);
+    const ultimo = await this.ultimoPeriodoGenerado(tarifa.alcance, tarifa.loteoId);
     if (ultimo && mesVigencia(tarifa) <= ultimo) {
       throw conflicto('La tarifa ya generó cuotas: para cambiar el valor, cargá una tarifa nueva con su mes de vigencia');
     }

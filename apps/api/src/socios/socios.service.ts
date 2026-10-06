@@ -28,6 +28,8 @@ const conParcelasVigentes = {
 
 type SocioConParcelas = Socio & { asignaciones: Prisma.AsignacionGetPayload<{ select: { parcela: typeof parcelaResumen } }>[] };
 
+const plural = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno : varios}`;
+
 const SIN_DEUDA: EstadoCuenta = { pendientes: 0, vencidas: 0, deuda: 0, deudaVencida: 0, interes: 0 };
 
 @Injectable()
@@ -270,6 +272,47 @@ export class SociosService {
     if (!socio.fechaBaja) throw conflicto('El socio ya está activo');
     await this.prisma.socio.update({ where: { id }, data: { fechaBaja: null, motivoBaja: null } });
     return this.obtener(id);
+  }
+
+  /**
+   * Borra al socio, con sus asignaciones, sus cuotas impagas o anuladas y sus avisos, y
+   * deja libres sus parcelas. Es para el socio cargado por error o duplicado: si ya tiene
+   * cobros, planes, transferencias o cuotas pagadas, eso es historia del club que no se
+   * puede perder, y lo que corresponde es darlo de baja.
+   */
+  async eliminar(id: number): Promise<void> {
+    const socio = await this.prisma.socio.findUnique({
+      where: { id },
+      select: {
+        _count: {
+          select: { cobros: true, planes: true, transferenciasCedidas: true, transferenciasRecibidas: true },
+        },
+      },
+    });
+    if (!socio) throw noEncontrado('No existe el socio');
+
+    const { cobros, planes, transferenciasCedidas, transferenciasRecibidas } = socio._count;
+    const transferencias = transferenciasCedidas + transferenciasRecibidas;
+    const pagadas = await this.prisma.cuota.count({
+      where: { socioId: id, estado: { in: ['PAGADA', 'REFINANCIADA'] } },
+    });
+    const motivos = [
+      cobros > 0 && plural(cobros, 'cobro', 'cobros'),
+      pagadas > 0 && plural(pagadas, 'cuota pagada o refinanciada', 'cuotas pagadas o refinanciadas'),
+      planes > 0 && plural(planes, 'plan de pago', 'planes de pago'),
+      transferencias > 0 && plural(transferencias, 'transferencia', 'transferencias'),
+    ].filter(Boolean);
+    if (motivos.length > 0) {
+      throw conflicto(`No se puede eliminar: tiene ${motivos.join(', ')}. Dalo de baja en su lugar.`);
+    }
+
+    // Las cuotas van antes que las asignaciones: las de parcela las referencian.
+    await this.prisma.$transaction([
+      this.prisma.envioAviso.deleteMany({ where: { socioId: id } }),
+      this.prisma.cuota.deleteMany({ where: { socioId: id } }),
+      this.prisma.asignacion.deleteMany({ where: { socioId: id } }),
+      this.prisma.socio.delete({ where: { id } }),
+    ]);
   }
 
   /**

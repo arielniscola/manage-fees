@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
-import { Pencil, Plus, RotateCcw } from 'lucide-react';
+import { Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   ETIQUETA_ESTADO_CIVIL,
@@ -17,9 +17,10 @@ import { dni, fecha, iniciales, mesAnio, nombreCompleto, plural } from '@/lib/fo
 import { HistorialDePagos } from '@/features/cobros/HistorialDePagos';
 import { PlanesDelSocio } from '@/features/planes/PlanesDelSocio';
 import { CuotasDelSocio } from '@/features/cuotas/CuotasDelSocio';
+import { GenerarPeriodoDialog } from '@/features/cuotas/GenerarPeriodoDialog';
 import { useReactivarSocio, useSocio } from './api';
 import { CargarHistorialDialog } from './CargarHistorialDialog';
-import { AsignarParcelaDialog, BajaSocioDialog, LiberarParcelaDialog } from './dialogs';
+import { AsignarParcelaDialog, BajaSocioDialog, EliminarSocioDialog, LiberarParcelaDialog } from './dialogs';
 
 export function SocioDetallePage() {
   const { id } = useParams();
@@ -27,6 +28,7 @@ export function SocioDetallePage() {
   const navigate = useNavigate();
   const { data: socio, isPending, isError, error, refetch } = useSocio(socioId);
   const [historial, setHistorial] = useState(false);
+  const [generar, setGenerar] = useState(false);
 
   if (isError) return <ErrorCarga mensaje={error.message} onReintentar={() => void refetch()} />;
   if (isPending) return <div className="h-40 animate-pulse rounded-card bg-superficie" />;
@@ -107,8 +109,9 @@ export function SocioDetallePage() {
         <ParcelasSocio socio={socio} />
       </div>
 
-      <CuotasDelSocio socio={socio} onCargarHistorial={() => setHistorial(true)} />
+      <CuotasDelSocio socio={socio} onCargarHistorial={() => setHistorial(true)} onGenerar={() => setGenerar(true)} />
       <CargarHistorialDialog socio={socio} abierto={historial} onAbiertoChange={setHistorial} />
+      <GenerarPeriodoDialog socio={socio} abierto={generar} onAbiertoChange={setGenerar} />
 
       <PlanesDelSocio socio={socio} />
 
@@ -119,27 +122,41 @@ export function SocioDetallePage() {
 
 function AccionesSocio({ socio, onEditar }: { socio: SocioDetalle; onEditar: () => void }) {
   const [baja, setBaja] = useState(false);
+  const [eliminar, setEliminar] = useState(false);
   const reactivar = useReactivarSocio(socio.id);
+
+  const botonEliminar = (
+    <>
+      <Button variante="terciario" className="text-mor" onClick={() => setEliminar(true)}>
+        <Trash2 /> Eliminar
+      </Button>
+      <EliminarSocioDialog socio={socio} abierto={eliminar} onAbiertoChange={setEliminar} />
+    </>
+  );
 
   if (socio.estado === 'baja') {
     return (
-      <Button
-        variante="secundario"
-        cargando={reactivar.isPending}
-        onClick={() =>
-          reactivar.mutate(undefined, {
-            onSuccess: () => toast.success('Socio reactivado. Recordá asignarle sus parcelas.'),
-            onError: (e) => toast.error(e.message),
-          })
-        }
-      >
-        <RotateCcw /> Reactivar socio
-      </Button>
+      <>
+        {botonEliminar}
+        <Button
+          variante="secundario"
+          cargando={reactivar.isPending}
+          onClick={() =>
+            reactivar.mutate(undefined, {
+              onSuccess: () => toast.success('Socio reactivado. Recordá asignarle sus parcelas.'),
+              onError: (e) => toast.error(e.message),
+            })
+          }
+        >
+          <RotateCcw /> Reactivar socio
+        </Button>
+      </>
     );
   }
 
   return (
     <>
+      {botonEliminar}
       <Button variante="secundario" className="text-mor" onClick={() => setBaja(true)}>
         Dar de baja
       </Button>

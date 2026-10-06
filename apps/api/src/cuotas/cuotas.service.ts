@@ -123,6 +123,27 @@ export class CuotasService {
     return this.aListItem(actualizada, hoy(), await this.interes.vigente());
   }
 
+  /**
+   * Borra una cuota anulada: es limpieza de lo que se generó o cargó por error. Solo las
+   * anuladas, para que nunca desaparezca deuda sin rastro. Ojo: una cuota de parcela o
+   * social anulada es la que impide que la generación vuelva a crear ese período; al
+   * borrarla, la próxima corrida lo genera de nuevo si sigue correspondiendo.
+   */
+  async eliminar(id: number): Promise<void> {
+    const cuota = await this.prisma.cuota.findUnique({
+      where: { id },
+      include: { _count: { select: { detallesCobro: true, refinanciadaEn: true } } },
+    });
+    if (!cuota) throw noEncontrado('No existe la cuota');
+    if (cuota.estado !== 'ANULADA') throw conflicto('Solo se pueden eliminar cuotas anuladas');
+    if (cuota.origen === 'PLAN') throw conflicto('Es una cuota de un plan de pago: forma parte del plan');
+    if (cuota._count.detallesCobro > 0) {
+      throw conflicto('Figura en un cobro, aunque esté anulado: eliminá primero ese cobro');
+    }
+    if (cuota._count.refinanciadaEn > 0) throw conflicto('Figura en un plan de pago');
+    await this.prisma.cuota.delete({ where: { id } });
+  }
+
   private filtroEstado(estado: CuotaListar['estado'], hoyISO: string): Prisma.CuotaWhereInput {
     const vence = aFecha(hoyISO);
     switch (estado) {

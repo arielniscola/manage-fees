@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link } from 'react-router';
-import { Ban, CalendarDays, PlayCircle, Search, Settings2 } from 'lucide-react';
+import { Ban, CalendarDays, PlayCircle, Search, Settings2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   cuotaAnularSchema,
@@ -17,11 +17,12 @@ import { Button } from '@/components/ui/button';
 import { Card, Chips, ErrorCarga, FilasCargando, Paginacion, Tabla, Td, Th, Vacio } from '@/components/ui/display';
 import { Dialog } from '@/components/ui/dialog';
 import { Field, Input, Textarea } from '@/components/ui/field';
+import { AccionLoteDialog, BarraLote, CasillaFila, CasillaTodas, useSeleccion } from '@/components/ui/lotes';
 import { Encabezado } from '@/layout/AppLayout';
 import { useLoteoActivo } from '@/layout/loteo-activo';
 import { fecha, nombreCompleto, plural } from '@/lib/formato';
 import { useDebounce, useFiltrosUrl } from '@/lib/hooks';
-import { useAnularCuota, useCuotas } from './api';
+import { useAnularCuota, useAnularCuotas, useCuotas, useEliminarCuotas } from './api';
 import { BadgeCuota } from './estados';
 import { GenerarPeriodoDialog } from './GenerarPeriodoDialog';
 
@@ -42,6 +43,9 @@ export function CuotasPage() {
   const q = useDebounce(texto);
   const [generar, setGenerar] = useState(false);
   const [anulando, setAnulando] = useState<CuotaListItem | null>(null);
+  const [lote, setLote] = useState<'anular' | 'eliminar' | null>(null);
+  const anularLote = useAnularCuotas();
+  const eliminarLote = useEliminarCuotas();
 
   useEffect(() => {
     if (q !== filtros.q) filtros.actualizar({ q });
@@ -63,6 +67,13 @@ export function CuotasPage() {
   // Con un filtro de fecha puesto (por ejemplo, al volver con la URL) arranca visible.
   const [verFechas, setVerFechas] = useState(porFecha);
   const filtrando = !!filtros.q || filtros.estado !== 'todas' || origen !== 'todos' || porFecha;
+
+  // Las impagas se pueden anular y las anuladas, borrar; las pagadas y refinanciadas, nada.
+  const seleccion = useSeleccion<CuotaListItem>({ q: filtros.q, estado: filtros.estado, origen, periodo, venceDesde, venceHasta, loteoId });
+  const elegibles = data?.items.filter(elegible) ?? [];
+  const paraAnular = seleccion.elegidos.filter(seAnula);
+  const paraEliminar = seleccion.elegidos.filter((c) => c.estado === 'anulada');
+  const enLote = lote === 'anular' ? paraAnular : paraEliminar;
 
   return (
     <>
@@ -193,9 +204,22 @@ export function CuotasPage() {
           )
         ) : (
           <>
+            <BarraLote cantidad={seleccion.cantidad} onLimpiar={seleccion.limpiar}>
+              {paraAnular.length > 0 && (
+                <Button variante="peligro" tamanio="sm" onClick={() => setLote('anular')}>
+                  <Ban /> Anular {paraAnular.length}
+                </Button>
+              )}
+              {paraEliminar.length > 0 && (
+                <Button variante="peligro" tamanio="sm" onClick={() => setLote('eliminar')}>
+                  <Trash2 /> Eliminar {plural(paraEliminar.length, 'anulada')}
+                </Button>
+              )}
+            </BarraLote>
             <Tabla>
               <thead>
                 <tr>
+                  <CasillaTodas items={elegibles} seleccion={seleccion} />
                   <Th>Período</Th>
                   <Th>Socio</Th>
                   <Th>Parcela</Th>
@@ -207,10 +231,11 @@ export function CuotasPage() {
               </thead>
               <tbody>
                 {isPending ? (
-                  <FilasCargando columnas={7} />
+                  <FilasCargando columnas={8} />
                 ) : (
                   data.items.map((c) => (
                     <tr key={c.id} className="hover:bg-superficie-2">
+                      <CasillaFila item={c} seleccion={seleccion} etiqueta={`la cuota ${c.etiqueta}`} deshabilitada={!elegible(c)} />
                       <Td className="whitespace-nowrap font-medium first-letter:uppercase">{c.etiqueta}</Td>
                       <Td>
                         <Link to={`/socios/${c.socio.id}`} className="font-medium text-tinta hover:underline">
@@ -271,9 +296,35 @@ export function CuotasPage() {
 
       <GenerarPeriodoDialog abierto={generar} onAbiertoChange={setGenerar} />
       <AnularCuotaDialog cuota={anulando} onCerrar={() => setAnulando(null)} />
+      <AccionLoteDialog
+        abierto={lote !== null}
+        onAbiertoChange={(v) => !v && setLote(null)}
+        titulo={lote === 'anular' ? 'Anular cuotas' : 'Eliminar cuotas anuladas'}
+        descripcion={
+          lote === 'anular'
+            ? `${plural(enLote.length, 'cuota impaga', 'cuotas impagas')}, ${pesos(enLote.reduce((t, c) => t + c.importe, 0))}. Dejan de contar en la deuda y la generación no las vuelve a crear.`
+            : `Se borran ${plural(enLote.length, 'cuota anulada', 'cuotas anuladas')} y no se puede deshacer. Ojo: si el período todavía corresponde, la próxima generación lo vuelve a crear, porque la cuota anulada era la que lo impedía.`
+        }
+        confirmar={lote === 'anular' ? `Anular ${plural(enLote.length, 'cuota')}` : `Eliminar ${plural(enLote.length, 'cuota')}`}
+        conMotivo={lote === 'anular'}
+        cargando={anularLote.isPending || eliminarLote.isPending}
+        onConfirmar={(motivo) => {
+          const ids = enLote.map((c) => c.id);
+          return lote === 'anular' ? anularLote.mutateAsync({ ids, motivo: motivo! }) : eliminarLote.mutateAsync(ids);
+        }}
+        etiquetaDe={(id) => {
+          const c = seleccion.elegidos.find((e) => e.id === id);
+          return c ? `${c.etiqueta} · ${nombreCompleto(c.socio)}${c.parcela ? ` · ${c.parcela.etiqueta}` : ''}` : `Cuota ${id}`;
+        }}
+        hecho={lote === 'anular' ? ['cuota anulada', 'cuotas anuladas'] : ['cuota eliminada', 'cuotas eliminadas']}
+        onTerminado={seleccion.limpiar}
+      />
     </>
   );
 }
+
+const seAnula = (c: CuotaListItem) => c.estado === 'pendiente' || c.estado === 'vencida';
+const elegible = (c: CuotaListItem) => seAnula(c) || c.estado === 'anulada';
 
 const valorValido = (valor: string | null, formato: RegExp): string | undefined =>
   valor && formato.test(valor) ? valor : undefined;

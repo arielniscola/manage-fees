@@ -3,16 +3,21 @@ import {
   cuotaAnularSchema,
   cuotaListarSchema,
   generarCuotasSchema,
+  loteAnularSchema,
+  loteSchema,
   tarifaActualizarSchema,
   tarifaCrearSchema,
   tarifaListarSchema,
   type CuotaAnular,
   type CuotaListar,
   type GenerarCuotas,
+  type Lote,
+  type LoteAnular,
   type TarifaActualizar,
   type TarifaCrear,
   type TarifaListar,
 } from '@mf/shared';
+import { enLote } from '../common/lote';
 import { ZodPipe } from '../common/zod.pipe';
 import { CuotasService } from './cuotas.service';
 import { GeneracionService } from './generacion.service';
@@ -61,6 +66,20 @@ export class CuotasController {
   @HttpCode(200)
   generar(@Body(new ZodPipe(generarCuotasSchema)) body: GenerarCuotas) {
     return this.generacion.generar(body);
+  }
+
+  /** Anula varias con el mismo motivo: las pagadas, refinanciadas o ya anuladas se saltean. */
+  @Post('anular')
+  @HttpCode(200)
+  anularLote(@Body(new ZodPipe(loteAnularSchema)) { ids, motivo }: LoteAnular) {
+    return enLote(ids, (id) => this.cuotas.anular(id, { motivo }));
+  }
+
+  /** Borra cuotas ya anuladas. Las que no lo están se saltean. */
+  @Post('eliminar')
+  @HttpCode(200)
+  eliminarLote(@Body(new ZodPipe(loteSchema)) { ids }: Lote) {
+    return enLote(ids, (id) => this.cuotas.eliminar(id));
   }
 
   @Post(':id/anular')

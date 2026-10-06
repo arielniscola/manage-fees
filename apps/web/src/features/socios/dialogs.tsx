@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Check, Search } from 'lucide-react';
@@ -25,7 +26,7 @@ import { cn } from '@/lib/cn';
 import { fecha, nombreCompleto } from '@/lib/formato';
 import { useDebounce } from '@/lib/hooks';
 import { useLoteos, useParcelas } from '../parcelas/api';
-import { useAsignarParcela, useBajaSocio, useLiberarParcela } from './api';
+import { useAsignarParcela, useBajaSocio, useEliminarSocio, useLiberarParcela } from './api';
 
 interface DialogoSocio {
   socio: SocioDetalle;
@@ -84,6 +85,57 @@ export function BajaSocioDialog({ socio, abierto, onAbiertoChange }: DialogoSoci
           <Input id="motivo" placeholder="Opcional" {...register('motivo')} />
         </Field>
       </form>
+    </Dialog>
+  );
+}
+
+/**
+ * Borra al socio por completo. Es para el cargado por error o duplicado: el servidor lo
+ * rechaza si ya tiene cobros, planes, transferencias o cuotas pagadas, y explica por qué.
+ */
+export function EliminarSocioDialog({ socio, abierto, onAbiertoChange }: DialogoSocio) {
+  const eliminar = useEliminarSocio(socio.id);
+  const navigate = useNavigate();
+  const n = socio.asignaciones.length;
+
+  return (
+    <Dialog
+      abierto={abierto}
+      onAbiertoChange={onAbiertoChange}
+      titulo="Eliminar socio"
+      ancho="sm"
+      descripcion={`Se borra a ${nombreCompleto(socio)} del sistema y no se puede deshacer.`}
+      pie={
+        <>
+          <Button variante="secundario" onClick={() => onAbiertoChange(false)}>Cancelar</Button>
+          <Button
+            variante="peligro"
+            cargando={eliminar.isPending}
+            onClick={() =>
+              eliminar.mutate(undefined, {
+                onSuccess: () => {
+                  toast.success(`${nombreCompleto(socio)} fue eliminado`);
+                  onAbiertoChange(false);
+                  navigate('/socios', { replace: true });
+                },
+                onError: (e) => toast.error(e.message),
+              })
+            }
+          >
+            Eliminar
+          </Button>
+        </>
+      }
+    >
+      <ul className="flex list-disc flex-col gap-1.5 pl-5 text-sm">
+        <li>Se borran sus cuotas impagas y anuladas, y los avisos que se le enviaron.</li>
+        {n > 0 && (
+          <li>
+            {n === 1 ? 'Se borra su asignación' : `Se borran sus ${n} asignaciones`}, y sus parcelas vigentes quedan libres.
+          </li>
+        )}
+        <li>Si ya tiene cobros, planes, transferencias o cuotas pagadas, no se puede eliminar: en ese caso, dalo de baja.</li>
+      </ul>
     </Dialog>
   );
 }

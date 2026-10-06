@@ -8,6 +8,7 @@ import type {
   ParcelaListarInput,
   ParcelaListItem,
   ResultadoImportacionParcelas,
+  ResultadoLote,
   Sector,
   SectorActualizarInput,
   SectorCrearInput,
@@ -72,6 +73,15 @@ export function useEliminarParcela() {
   const invalidar = useInvalidar();
   return useMutation({
     mutationFn: (id: number) => api.delete(`/parcelas/${id}`),
+    onSuccess: invalidar,
+  });
+}
+
+/** Elimina varias parcelas: las que tienen historial se saltean y se informan. */
+export function useEliminarParcelas() {
+  const invalidar = useInvalidar();
+  return useMutation({
+    mutationFn: (ids: number[]) => api.post<ResultadoLote>('/parcelas/eliminar', { ids }),
     onSuccess: invalidar,
   });
 }

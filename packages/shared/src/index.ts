@@ -14,3 +14,4 @@ export * from './planes';
 export * from './avisos';
 export * from './reportes';
 export * from './auth';
+export * from './lotes';

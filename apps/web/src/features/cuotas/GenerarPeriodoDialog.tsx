@@ -2,25 +2,36 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { AlertCircle, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { hoy, pesos } from '@mf/shared';
+import { hoy, pesos, type SocioDetalle } from '@mf/shared';
 import { Button } from '@/components/ui/button';
 import { Tabla, Td, Th } from '@/components/ui/display';
 import { Dialog } from '@/components/ui/dialog';
 import { Field, Input } from '@/components/ui/field';
 import { useLoteoActivo } from '@/layout/loteo-activo';
-import { fecha, plural } from '@/lib/formato';
+import { fecha, nombreCompleto, plural } from '@/lib/formato';
 import { useGenerarCuotas, useVistaPreviaGeneracion } from './api';
 
 /**
  * Genera las cuotas que falten hasta una fecha. Siempre muestra primero la vista previa:
  * la generación es idempotente, pero conviene ver qué se va a crear antes de crearlo.
- * Con un loteo activo en el sidebar, solo genera las de sus parcelas.
+ * Con un loteo activo en el sidebar, solo genera las de sus parcelas. Desde la ficha de un
+ * socio genera solo las suyas: sirve para el que se dio de alta tarde.
  */
-export function GenerarPeriodoDialog({ abierto, onAbiertoChange }: { abierto: boolean; onAbiertoChange: (v: boolean) => void }) {
-  const { loteoId } = useLoteoActivo();
+export function GenerarPeriodoDialog({
+  abierto,
+  onAbiertoChange,
+  socio,
+}: {
+  abierto: boolean;
+  onAbiertoChange: (v: boolean) => void;
+  socio?: SocioDetalle;
+}) {
+  const { loteoId: loteoActivo } = useLoteoActivo();
+  // Desde la ficha manda el socio: sus parcelas pueden ser de cualquier loteo.
+  const loteoId = socio ? undefined : loteoActivo;
   const [hasta, setHasta] = useState(hoy);
   const [desde, setDesde] = useState('');
-  const filtros = { hasta, desde: desde || undefined, loteoId };
+  const filtros = { hasta, desde: desde || undefined, loteoId, socioId: socio?.id };
   const valido = /^\d{4}-\d{2}-\d{2}$/.test(hasta) && (!desde || /^\d{4}-\d{2}$/.test(desde));
   const previa = useVistaPreviaGeneracion(filtros, abierto && valido);
   const generar = useGenerarCuotas();
@@ -38,8 +49,12 @@ export function GenerarPeriodoDialog({ abierto, onAbiertoChange }: { abierto: bo
     <Dialog
       abierto={abierto}
       onAbiertoChange={onAbiertoChange}
-      titulo="Generar período"
-      descripcion={`Se crean las cuotas de cada parcela asignada${loteoId ? ' del loteo elegido' : ''} cuyo período ya haya empezado. Generar dos veces lo mismo no duplica nada.`}
+      titulo={socio ? 'Generar cuotas del socio' : 'Generar período'}
+      descripcion={
+        socio
+          ? `Se crean las cuotas de las parcelas de ${nombreCompleto(socio)} y su cuota social, de los períodos que ya hayan empezado. Las que ya existen no se duplican.`
+          : `Se crean las cuotas de cada parcela asignada${loteoId ? ' del loteo elegido' : ''} cuyo período ya haya empezado. Generar dos veces lo mismo no duplica nada.`
+      }
       pie={
         <>
           <Button variante="secundario" onClick={() => onAbiertoChange(false)}>
@@ -53,7 +68,11 @@ export function GenerarPeriodoDialog({ abierto, onAbiertoChange }: { abierto: bo
                 { ...filtros, simular: false },
                 {
                   onSuccess: (r) => {
-                    toast.success(`Se generaron ${plural(r.cuotas, 'cuota')} para ${plural(r.socios, 'socio')}`);
+                    toast.success(
+                      socio
+                        ? `Se generaron ${plural(r.cuotas, 'cuota')} para ${nombreCompleto(socio)}`
+                        : `Se generaron ${plural(r.cuotas, 'cuota')} para ${plural(r.socios, 'socio')}`,
+                    );
                     onAbiertoChange(false);
                   },
                   onError: (e) => toast.error(e.message),
@@ -78,7 +97,11 @@ export function GenerarPeriodoDialog({ abierto, onAbiertoChange }: { abierto: bo
           <Field
             label="Cobrar desde (opcional)"
             htmlFor="generar-desde"
-            ayuda="Genera también los meses anteriores a la asignación, desde este mes, a nombre del primer titular."
+            ayuda={
+              socio
+                ? 'Genera también los meses anteriores a su asignación, desde este mes, si fue el primer titular de la parcela.'
+                : 'Genera también los meses anteriores a la asignación, desde este mes, a nombre del primer titular.'
+            }
           >
             <Input id="generar-desde" type="month" value={desde} onChange={(e) => setDesde(e.target.value)} className="tabular" />
           </Field>
@@ -106,7 +129,9 @@ export function GenerarPeriodoDialog({ abierto, onAbiertoChange }: { abierto: bo
           </Aviso>
         ) : previa.data.cuotas === 0 && previa.data.yaExistian === 0 ? (
           <Aviso tono="pend" icono={<AlertCircle />}>
-            No hay cuotas para este rango: ninguna parcela estaba asignada entonces.
+            {socio && socio.asignaciones.length === 0
+              ? 'El socio no tiene parcelas asignadas, así que no genera cuotas.'
+              : `No hay cuotas para este rango: ${socio ? 'el socio no tenía parcelas asignadas' : 'ninguna parcela estaba asignada'} entonces.`}
             {!desde && ' Si se asignaron después, elegí desde qué mes cobrarlas en «Cobrar desde».'}
           </Aviso>
         ) : previa.data.cuotas === 0 ? (
@@ -152,7 +177,7 @@ export function GenerarPeriodoDialog({ abierto, onAbiertoChange }: { abierto: bo
               </Tabla>
             </div>
             <p className="text-[13px] text-tenue">
-              Alcanza a {plural(previa.data.socios, 'socio')}.
+              {!socio && `Alcanza a ${plural(previa.data.socios, 'socio')}.`}
               {previa.data.yaExistian > 0 && ` Se saltean ${plural(previa.data.yaExistian, 'cuota')} que ya existían.`}
             </p>
           </>

@@ -3,13 +3,18 @@ import {
   cobroAnularSchema,
   cobroCrearSchema,
   cobroListarSchema,
+  loteAnularSchema,
+  loteSchema,
   type CobroAnular,
   type CobroCrear,
   type CobroListar,
+  type Lote,
+  type LoteAnular,
   type UsuarioSesion,
 } from '@mf/shared';
 import type { Response } from 'express';
 import { UsuarioActual } from '../auth/decorators';
+import { enLote } from '../common/lote';
 import { ZodPipe } from '../common/zod.pipe';
 import { CobrosService } from './cobros.service';
 import { RecibosService } from './recibos.service';
@@ -24,6 +29,20 @@ export class CobrosController {
   @Get()
   listar(@Query(new ZodPipe(cobroListarSchema)) query: CobroListar) {
     return this.cobros.listar(query);
+  }
+
+  /** Anula varios con el mismo motivo: los ya anulados se saltean. */
+  @Post('anular')
+  @HttpCode(200)
+  anularLote(@UsuarioActual() usuario: UsuarioSesion, @Body(new ZodPipe(loteAnularSchema)) { ids, motivo }: LoteAnular) {
+    return enLote(ids, (id) => this.cobros.anular(id, usuario, { motivo }));
+  }
+
+  /** Borra cobros ya anulados, con su recibo. Los vigentes se saltean. */
+  @Post('eliminar')
+  @HttpCode(200)
+  eliminarLote(@Body(new ZodPipe(loteSchema)) { ids }: Lote) {
+    return enLote(ids, (id) => this.cobros.eliminar(id));
   }
 
   @Get(':id')

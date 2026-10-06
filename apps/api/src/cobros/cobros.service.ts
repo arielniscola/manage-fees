@@ -259,6 +259,19 @@ export class CobrosService {
   }
 
   /**
+   * Borra un cobro anulado junto con su recibo. Solo los anulados: anular ya devolvió sus
+   * cuotas a pendiente, así que borrarlo no cambia ninguna deuda. El número de recibo no
+   * se reutiliza: queda un hueco en la numeración.
+   */
+  async eliminar(id: number): Promise<void> {
+    const cobro = await this.prisma.cobro.findUnique({ where: { id }, select: { anuladoEn: true } });
+    if (!cobro) throw noEncontrado('No existe el cobro');
+    if (!cobro.anuladoEn) throw conflicto('Solo se pueden eliminar cobros anulados');
+    // Los renglones y el recibo se borran en cascada.
+    await this.prisma.cobro.delete({ where: { id } });
+  }
+
+  /**
    * Toma el siguiente número dentro de la transacción. El UPDATE bloquea la fila del
    * contador, así dos cobros simultáneos no pueden llevarse el mismo número, y si algo
    * falla después el incremento vuelve atrás con el resto.

@@ -10,6 +10,7 @@ import type {
   Paginado,
   ResultadoAdelanto,
   ResultadoGeneracion,
+  ResultadoLote,
   Tarifa,
   TarifaActualizarInput,
   TarifaCrearInput,
@@ -73,6 +74,23 @@ export function useAnularCuota() {
   return useMutation({
     mutationFn: ({ id, ...body }: CuotaAnularInput & { id: number }) =>
       api.post<CuotaListItem>(`/cuotas/${id}/anular`, body),
+    onSuccess: invalidar,
+  });
+}
+
+export function useAnularCuotas() {
+  const invalidar = useInvalidar();
+  return useMutation({
+    mutationFn: (body: { ids: number[]; motivo: string }) => api.post<ResultadoLote>('/cuotas/anular', body),
+    onSuccess: invalidar,
+  });
+}
+
+/** Borra cuotas ya anuladas. */
+export function useEliminarCuotas() {
+  const invalidar = useInvalidar();
+  return useMutation({
+    mutationFn: (ids: number[]) => api.post<ResultadoLote>('/cuotas/eliminar', { ids }),
     onSuccess: invalidar,
   });
 }

@@ -6,6 +6,7 @@ import type {
   CobroListarInput,
   CobroListItem,
   CobrosPaginados,
+  ResultadoLote,
 } from '@mf/shared';
 import { api } from '@/lib/api';
 
@@ -62,6 +63,23 @@ export function useAnularCobro() {
   const invalidar = useInvalidar();
   return useMutation({
     mutationFn: ({ id, ...body }: CobroAnularInput & { id: number }) => api.post<CobroDetalle>(`/cobros/${id}/anular`, body),
+    onSuccess: invalidar,
+  });
+}
+
+export function useAnularCobros() {
+  const invalidar = useInvalidar();
+  return useMutation({
+    mutationFn: (body: { ids: number[]; motivo: string }) => api.post<ResultadoLote>('/cobros/anular', body),
+    onSuccess: invalidar,
+  });
+}
+
+/** Borra cobros ya anulados, con su recibo. */
+export function useEliminarCobros() {
+  const invalidar = useInvalidar();
+  return useMutation({
+    mutationFn: (ids: number[]) => api.post<ResultadoLote>('/cobros/eliminar', { ids }),
     onSuccess: invalidar,
   });
 }

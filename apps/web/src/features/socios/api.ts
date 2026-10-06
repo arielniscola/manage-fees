@@ -4,6 +4,7 @@ import type {
   AsignacionLiberarInput,
   Paginado,
   ResultadoImportacion,
+  ResultadoLote,
   SocioActualizarInput,
   SocioBajaInput,
   SocioCrearInput,
@@ -74,6 +75,35 @@ export function useReactivarSocio(id: number) {
   return useMutation({
     mutationFn: () => api.post<SocioDetalle>(`/socios/${id}/reactivar`),
     onSuccess: invalidar,
+  });
+}
+
+/** Borra al socio por completo. La ficha ya no existe: se saca del caché en vez de refrescarla. */
+export function useEliminarSocio(id: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.delete(`/socios/${id}`),
+    onSuccess: () => {
+      qc.removeQueries({ queryKey: clavesSocios.detalle(id) });
+      void qc.invalidateQueries({ queryKey: clavesSocios.todos });
+      void qc.invalidateQueries({ queryKey: ['parcelas'] });
+      void qc.invalidateQueries({ queryKey: ['cuotas'] });
+      void qc.invalidateQueries({ queryKey: ['panel'] });
+    },
+  });
+}
+
+/** Elimina varios socios: el resultado dice cuáles se saltearon y por qué. */
+export function useEliminarSocios() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ids: number[]) => api.post<ResultadoLote>('/socios/eliminar', { ids }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: clavesSocios.todos });
+      void qc.invalidateQueries({ queryKey: ['parcelas'] });
+      void qc.invalidateQueries({ queryKey: ['cuotas'] });
+      void qc.invalidateQueries({ queryKey: ['panel'] });
+    },
   });
 }
 

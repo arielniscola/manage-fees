@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react';
-import { FileText, Plus, Search } from 'lucide-react';
-import { ETIQUETA_MEDIO_PAGO, numeroRecibo, pesos } from '@mf/shared';
+import { Ban, FileText, Plus, Search, Trash2 } from 'lucide-react';
+import { ETIQUETA_MEDIO_PAGO, numeroRecibo, pesos, type CobroListItem } from '@mf/shared';
 import { Button } from '@/components/ui/button';
 import { Card, Chips, ErrorCarga, FilasCargando, Paginacion, Tabla, Td, Th, Vacio } from '@/components/ui/display';
 import { Input } from '@/components/ui/field';
+import { AccionLoteDialog, BarraLote, CasillaFila, CasillaTodas, useSeleccion } from '@/components/ui/lotes';
 import { Encabezado } from '@/layout/AppLayout';
 import { useLoteoActivo } from '@/layout/loteo-activo';
 import { fecha, nombreCompleto, plural } from '@/lib/formato';
 import { useDebounce, useFiltrosUrl } from '@/lib/hooks';
-import { urlRecibo, useCobros } from './api';
+import { urlRecibo, useAnularCobros, useCobros, useEliminarCobros } from './api';
 import { BadgeCobro, CobroDetalleDialog } from './CobroDetalleDialog';
 import { RegistrarPagoDialog } from './RegistrarPagoDialog';
 
@@ -22,6 +23,9 @@ export function CobrosPage() {
   const q = useDebounce(texto);
   const [registrando, setRegistrando] = useState(false);
   const [detalle, setDetalle] = useState<number | null>(null);
+  const [lote, setLote] = useState<'anular' | 'eliminar' | null>(null);
+  const anularLote = useAnularCobros();
+  const eliminarLote = useEliminarCobros();
 
   useEffect(() => {
     if (q !== filtros.q) filtros.actualizar({ q });
@@ -36,6 +40,12 @@ export function CobrosPage() {
   });
 
   const filtrando = !!filtros.q || filtros.estado !== 'vigentes';
+
+  // Los vigentes se anulan; los anulados se pueden borrar.
+  const seleccion = useSeleccion<CobroListItem>({ q: filtros.q, estado: filtros.estado, loteoId });
+  const paraAnular = seleccion.elegidos.filter((c) => !c.anulado);
+  const paraEliminar = seleccion.elegidos.filter((c) => c.anulado);
+  const enLote = lote === 'anular' ? paraAnular : paraEliminar;
 
   return (
     <>
@@ -93,9 +103,22 @@ export function CobrosPage() {
           )
         ) : (
           <>
+            <BarraLote cantidad={seleccion.cantidad} onLimpiar={seleccion.limpiar}>
+              {paraAnular.length > 0 && (
+                <Button variante="peligro" tamanio="sm" onClick={() => setLote('anular')}>
+                  <Ban /> Anular {paraAnular.length}
+                </Button>
+              )}
+              {paraEliminar.length > 0 && (
+                <Button variante="peligro" tamanio="sm" onClick={() => setLote('eliminar')}>
+                  <Trash2 /> Eliminar {plural(paraEliminar.length, 'anulado')}
+                </Button>
+              )}
+            </BarraLote>
             <Tabla>
               <thead>
                 <tr>
+                  <CasillaTodas items={data?.items ?? []} seleccion={seleccion} />
                   <Th>Recibo</Th>
                   <Th>Fecha</Th>
                   <Th>Socio</Th>
@@ -108,10 +131,11 @@ export function CobrosPage() {
               </thead>
               <tbody>
                 {isPending ? (
-                  <FilasCargando columnas={8} />
+                  <FilasCargando columnas={9} />
                 ) : (
                   data.items.map((c) => (
                     <tr key={c.id} onClick={() => setDetalle(c.id)} className="cursor-pointer transition-colors hover:bg-superficie-2">
+                      <CasillaFila item={c} seleccion={seleccion} etiqueta={`el recibo ${numeroRecibo(c.numeroRecibo)}`} />
                       <Td className="font-semibold tabular">{numeroRecibo(c.numeroRecibo)}</Td>
                       <Td className="tabular">{fecha(c.fecha)}</Td>
                       <Td>
@@ -153,6 +177,29 @@ export function CobrosPage() {
 
       <RegistrarPagoDialog abierto={registrando} onAbiertoChange={setRegistrando} />
       <CobroDetalleDialog cobroId={detalle} onCerrar={() => setDetalle(null)} />
+      <AccionLoteDialog
+        abierto={lote !== null}
+        onAbiertoChange={(v) => !v && setLote(null)}
+        titulo={lote === 'anular' ? 'Anular cobros' : 'Eliminar cobros anulados'}
+        descripcion={
+          lote === 'anular'
+            ? `${plural(enLote.length, 'cobro')} por ${pesos(enLote.reduce((t, c) => t + c.total, 0))}. Sus cuotas vuelven a quedar pendientes y los recibos quedan anulados.`
+            : `Se borran ${plural(enLote.length, 'cobro anulado', 'cobros anulados')} con sus recibos y no se puede deshacer. Las cuotas no cambian: ya habían vuelto a pendiente al anular. Los números de recibo no se reutilizan.`
+        }
+        confirmar={lote === 'anular' ? `Anular ${plural(enLote.length, 'cobro')}` : `Eliminar ${plural(enLote.length, 'cobro')}`}
+        conMotivo={lote === 'anular'}
+        cargando={anularLote.isPending || eliminarLote.isPending}
+        onConfirmar={(motivo) => {
+          const ids = enLote.map((c) => c.id);
+          return lote === 'anular' ? anularLote.mutateAsync({ ids, motivo: motivo! }) : eliminarLote.mutateAsync(ids);
+        }}
+        etiquetaDe={(id) => {
+          const c = seleccion.elegidos.find((e) => e.id === id);
+          return c ? `Recibo ${numeroRecibo(c.numeroRecibo)} · ${nombreCompleto(c.socio)}` : `Cobro ${id}`;
+        }}
+        hecho={lote === 'anular' ? ['cobro anulado', 'cobros anulados'] : ['cobro eliminado', 'cobros eliminados']}
+        onTerminado={seleccion.limpiar}
+      />
     </>
   );
 }

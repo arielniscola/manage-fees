@@ -21,10 +21,13 @@ const VISIBLES = 5;
 export function CuotasDelSocio({
   socio,
   onCargarHistorial,
+  onGenerar,
 }: {
   socio: SocioDetalle;
   /** Abre la carga del historial de antes del sistema, si la ficha la ofrece. */
   onCargarHistorial?: () => void;
+  /** Abre la generación de las cuotas que le falten al socio, si la ficha la ofrece. */
+  onGenerar?: () => void;
 }) {
   const { data: cuotas, isPending, isError, error } = useCuotasDeSocio(socio.id);
   const [viendoTodas, setViendoTodas] = useState(false);
@@ -63,6 +66,11 @@ export function CuotasDelSocio({
         }
         acciones={
           <span className="flex items-center gap-4">
+            {onGenerar && (
+              <button type="button" onClick={onGenerar} className="text-[13px] font-semibold text-pino-600 hover:underline">
+                Generar cuotas
+              </button>
+            )}
             {onCargarHistorial && (
               <button
                 type="button"
@@ -87,7 +95,7 @@ export function CuotasDelSocio({
           descripcion={
             socio.parcelas.length === 0
               ? 'El socio no tiene parcelas asignadas, así que todavía no genera cuota.'
-              : 'Las cuotas se generan solas todos los días, o a mano desde «Generar período». Lo de antes del sistema se carga desde «Cargar historial».'
+              : 'Las cuotas se generan solas todos los días, o a mano desde «Generar cuotas». Lo de antes del sistema se carga desde «Cargar historial».'
           }
         />
       ) : (

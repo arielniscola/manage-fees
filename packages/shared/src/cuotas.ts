@@ -237,6 +237,11 @@ export const generarCuotasSchema = z.object({
   desde: mesSchema.optional(),
   /** Limita la generación a las parcelas de un loteo. */
   loteoId: z.coerce.number().int().positive().optional(),
+  /**
+   * Limita la generación a las cuotas de un socio: las de sus parcelas y su cuota social.
+   * Sirve para el que se dio de alta tarde y no puede esperar a la corrida diaria.
+   */
+  socioId: z.coerce.number().int().positive().optional(),
   /** Solo calcula y devuelve la vista previa, sin escribir nada. */
   simular: z.coerce.boolean().default(false),
 });

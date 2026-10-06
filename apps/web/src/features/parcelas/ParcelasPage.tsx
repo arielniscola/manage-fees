@@ -14,7 +14,8 @@ import { useLoteoActivo } from '@/layout/loteo-activo';
 import { ApiError } from '@/lib/api';
 import { fecha, metros, nombreCompleto, plural } from '@/lib/formato';
 import { useDebounce, useFiltrosUrl } from '@/lib/hooks';
-import { useEliminarParcela, useGuardarParcela, useLoteos, useParcelas, useSectores } from './api';
+import { AccionLoteDialog, BarraLote, CasillaFila, CasillaTodas, useSeleccion } from '@/components/ui/lotes';
+import { useEliminarParcela, useEliminarParcelas, useGuardarParcela, useLoteos, useParcelas, useSectores } from './api';
 import { LoteosDialog } from './LoteosDialog';
 import { TransferirDialog } from './TransferirDialog';
 import { SectoresDialog } from './SectoresDialog';
@@ -34,6 +35,8 @@ export function ParcelasPage() {
   const [sectoresAbierto, setSectoresAbierto] = useState(false);
   const [loteosAbierto, setLoteosAbierto] = useState(false);
   const [sectorId, setSectorId] = useState<number | null>(null);
+  const [eliminandoLote, setEliminandoLote] = useState(false);
+  const eliminarLote = useEliminarParcelas();
   // El loteo sale del selector del sidebar: acá solo se afina por sector dentro de él.
   const { data: sectoresDelLoteo = [] } = useSectores(loteoId);
 
@@ -54,6 +57,9 @@ export function ParcelasPage() {
     page: filtros.page,
     pageSize: PAGE_SIZE,
   });
+  // Solo se eligen las que se pueden borrar: las que tuvieron titular no.
+  const seleccion = useSeleccion<ParcelaListItem>({ q: filtros.q, estado: filtros.estado, sectorId, loteoId });
+  const elegibles = data?.items.filter((p) => p.puedeEliminar) ?? [];
 
   return (
     <>
@@ -134,9 +140,15 @@ export function ParcelasPage() {
           )
         ) : (
           <>
+            <BarraLote cantidad={seleccion.cantidad} onLimpiar={seleccion.limpiar}>
+              <Button variante="peligro" tamanio="sm" onClick={() => setEliminandoLote(true)}>
+                <Trash2 /> Eliminar
+              </Button>
+            </BarraLote>
             <Tabla>
               <thead>
                 <tr>
+                  <CasillaTodas items={elegibles} seleccion={seleccion} />
                   <Th>Código</Th>
                   <Th>Loteo y sector</Th>
                   <Th className="text-right">Superficie</Th>
@@ -148,10 +160,11 @@ export function ParcelasPage() {
               </thead>
               <tbody>
                 {isPending ? (
-                  <FilasCargando columnas={7} />
+                  <FilasCargando columnas={8} />
                 ) : (
                   data.items.map((p) => (
                     <tr key={p.id} className="hover:bg-superficie-2">
+                      <CasillaFila item={p} seleccion={seleccion} etiqueta={`la parcela ${p.codigo}`} deshabilitada={!p.puedeEliminar} />
                       <Td className="font-semibold tabular">
                         <Link to={`/parcelas/${p.id}`} className="hover:underline">
                           {p.codigo}
@@ -215,6 +228,18 @@ export function ParcelasPage() {
       <LoteosDialog abierto={loteosAbierto} onAbiertoChange={setLoteosAbierto} />
       <TransferirDialog parcela={transfiriendo} onCerrar={() => setTransfiriendo(null)} />
       <EliminarDialog parcela={eliminando} onCerrar={() => setEliminando(null)} />
+      <AccionLoteDialog
+        abierto={eliminandoLote}
+        onAbiertoChange={setEliminandoLote}
+        titulo="Eliminar parcelas"
+        descripcion={`Se borran ${plural(seleccion.cantidad, 'parcela')} del sistema. No se puede deshacer.`}
+        confirmar={`Eliminar ${plural(seleccion.cantidad, 'parcela')}`}
+        cargando={eliminarLote.isPending}
+        onConfirmar={() => eliminarLote.mutateAsync(seleccion.elegidos.map((p) => p.id))}
+        etiquetaDe={(id) => `Parcela ${seleccion.elegidos.find((p) => p.id === id)?.etiqueta ?? id}`}
+        hecho={['parcela eliminada', 'parcelas eliminadas']}
+        onTerminado={seleccion.limpiar}
+      />
     </>
   );
 }
