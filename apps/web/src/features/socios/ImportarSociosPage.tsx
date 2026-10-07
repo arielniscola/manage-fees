@@ -58,6 +58,7 @@ export function ImportarSociosPage() {
         onSuccess: (r) => {
           const partes = [
             r.nuevos > 0 && plural(r.nuevos, 'socio importado', 'socios importados'),
+            r.existentes > 0 && plural(r.existentes, 'socio existente con lotes nuevos', 'socios existentes con lotes nuevos'),
             r.parcelasNuevas > 0 && plural(r.parcelasNuevas, 'lote creado', 'lotes creados'),
           ].filter(Boolean);
           toast.success(partes.join(' · '));
@@ -69,7 +70,7 @@ export function ImportarSociosPage() {
   };
 
   const faltanColumnas = (previa?.columnasFaltantes.length ?? 0) > 0;
-  const hayAlgoNuevo = !!previa && (previa.nuevos > 0 || previa.parcelasNuevas > 0);
+  const hayAlgoNuevo = !!previa && (previa.nuevos > 0 || previa.existentes > 0 || previa.parcelasNuevas > 0);
   const sePuedeImportar = !!previa && !faltanColumnas && previa.conError === 0 && hayAlgoNuevo;
   const nombreLoteo = loteos.data?.find((l) => l.id === loteoId)?.nombre;
 
@@ -158,7 +159,8 @@ export function ImportarSociosPage() {
         <p className="text-[13px] text-tenue">
           Si un socio tiene varios lotes, aparece en varias filas con el mismo DNI: se da de alta una vez y se le asignan
           todos. Un socio con lotes entra como titular; uno sin lotes, como suplente. Las filas sin nombre ni DNI son lotes
-          libres. Los socios que ya existen —mismo DNI— se omiten, así que reimportar el mismo archivo no duplica nada.
+          libres. A los socios que ya existen —mismo DNI— no se les cambia ningún dato: solo se les asignan los lotes del
+          archivo que todavía no tienen, así que reimportar el mismo archivo no duplica nada.
         </p>
       </Card>
 
@@ -206,6 +208,7 @@ export function ImportarSociosPage() {
             <Button onClick={confirmar} disabled={!sePuedeImportar} cargando={importar.isPending}>
               <CheckCircle2 /> Importar
               {previa.nuevos > 0 ? ` ${plural(previa.nuevos, 'socio')}` : ''}
+              {previa.asignaciones > 0 ? `${previa.nuevos > 0 ? ',' : ''} asignar ${plural(previa.asignaciones, 'lote')}` : ''}
               {previa.parcelasNuevas > 0 ? ` y crear ${plural(previa.parcelasNuevas, 'lote')}` : ''}
             </Button>
             <Button variante="secundario" onClick={() => elegir(null)}>
@@ -234,9 +237,10 @@ function Resumen({ previa }: { previa: ResultadoImportacion }) {
   const datos = [
     { etiqueta: 'Filas leídas', valor: previa.total, tono: '' },
     { etiqueta: 'Socios nuevos', valor: previa.nuevos, tono: 'text-ok' },
+    { etiqueta: 'Socios existentes', valor: previa.existentes, tono: previa.existentes > 0 ? 'text-ok' : 'text-tenue' },
     { etiqueta: 'Parcelas a asignar', valor: previa.asignaciones, tono: '' },
     { etiqueta: 'Lotes a crear', valor: previa.parcelasNuevas, tono: '' },
-    { etiqueta: 'Ya existían', valor: previa.omitidos, tono: 'text-tenue' },
+    { etiqueta: 'Se omiten', valor: previa.omitidos, tono: 'text-tenue' },
     { etiqueta: 'Con advertencias', valor: previa.conAdvertencias, tono: previa.conAdvertencias > 0 ? 'text-pend' : 'text-tenue' },
     { etiqueta: 'Con error', valor: previa.conError, tono: previa.conError > 0 ? 'text-mor' : 'text-tenue' },
   ];
@@ -271,11 +275,21 @@ function Fila({ fila }: { fila: FilaImportacion }) {
               <span key={p.codigo} className="block whitespace-nowrap">
                 {p.codigo}
                 {p.nueva && <span className="ml-1.5 text-xs text-tenue">(se crea)</span>}
+                {p.yaAsignada && <span className="ml-1.5 text-xs text-tenue">(ya es suya)</span>}
               </span>
             ))}
       </Td>
       <Td>
         {fila.estado === 'nueva' && <Badge tono="ok">Se importa</Badge>}
+        {fila.estado === 'existente' && fila.socioExistente && (
+          <>
+            <Badge tono="ok">Se le asignan lotes</Badge>
+            <span className="mt-1 block text-xs text-tenue">
+              Ya existe: socio N° {fila.socioExistente.numero}, {fila.socioExistente.apellido} {fila.socioExistente.nombre}. Sus
+              datos no se tocan
+            </span>
+          </>
+        )}
         {fila.estado === 'agrupada' && (
           <>
             <Badge tono="ok">Se suma al socio</Badge>

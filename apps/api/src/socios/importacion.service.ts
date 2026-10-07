@@ -23,6 +23,8 @@ const MAX_FILAS = 5000;
 interface ParcelaExistente {
   id: number;
   ocupada: boolean;
+  /** El socio que la tiene hoy, si la tiene alguien. */
+  socioId: number | null;
   titular: string;
 }
 
@@ -40,6 +42,9 @@ type Ubicacion = { existente: ParcelaExistente } | { crear: true } | { error: st
  * Con un loteo elegido, las manzanas y los lotes que la planilla nombra y todavía no
  * existen se crean en ese loteo. Sin loteo, las parcelas tienen que estar cargadas.
  *
+ * Un socio que ya existe —mismo DNI— no se modifica: solo se le asignan los lotes de sus
+ * filas que todavía no tiene. Si ya los tiene todos, la fila se omite.
+ *
  * El análisis de cada fila vive en `@mf/shared`; acá se resuelve lo que necesita la base:
  * si el socio ya existe, si el número está libre y si las parcelas se pueden asignar.
  */
@@ -52,7 +57,8 @@ export class ImportacionService {
   }
 
   /**
-   * Crea las parcelas que faltan, da de alta las filas nuevas y les asigna sus parcelas.
+   * Crea las parcelas que faltan, da de alta las filas nuevas y les asigna sus parcelas, y
+   * a los socios que ya existían les asigna las que todavía no tienen.
    * Se vuelve a analizar el archivo entero: entre la previsualización y la confirmación
    * pudo cambiar cualquier cosa, y el que manda es el estado de la base al importar.
    */
@@ -69,12 +75,13 @@ export class ImportacionService {
         'archivo',
       );
     }
-    if (resultado.nuevos === 0 && resultado.parcelasNuevas === 0) {
+    if (resultado.nuevos === 0 && resultado.existentes === 0 && resultado.parcelasNuevas === 0) {
       throw conflicto('No hay nada nuevo para importar: todos los socios y lotes del archivo ya existen.', 'archivo');
     }
 
     const filas = resultado.filas;
     const nuevas = filas.filter((f) => f.estado === 'nueva');
+    const existentes = filas.filter((f) => f.estado === 'existente');
 
     await this.prisma.$transaction(async (tx) => {
       // Primero las parcelas que faltan, con su manzana si tampoco existe.
@@ -85,7 +92,7 @@ export class ImportacionService {
         for (const s of existentes) sectores.set(normalizarEncabezado(s.nombre), s.id);
 
         for (const fila of filas) {
-          if (fila.estado !== 'nueva' && fila.estado !== 'agrupada' && fila.estado !== 'sinSocio') continue;
+          if (fila.estado === 'omitida' || fila.estado === 'error') continue;
           for (const p of fila.parcelas) {
             if (!p.nueva || !p.manzana || creadas.has(claveParcela(p))) continue;
             const claveSector = normalizarEncabezado(p.manzana);
@@ -102,6 +109,19 @@ export class ImportacionService {
           }
         }
       }
+
+      /** Le asigna al socio las parcelas de la fila y de sus agrupadas que todavía no tiene. */
+      const asignar = async (fila: FilaImportacion, socioId: number, desde: Date) => {
+        const parcelas = parcelasDelSocio(fila, filas);
+        for (const p of parcelas) {
+          const ubicacion = ubicar(p);
+          const parcelaId = 'existente' in ubicacion ? ubicacion.existente.id : creadas.get(claveParcela(p));
+          // La previsualización ya se aseguró de que exista o se haya creado, y esté libre.
+          if (!parcelaId) throw conflicto(`La parcela ${p.codigo} de la fila ${fila.fila} ya no está disponible`, 'archivo');
+          await tx.asignacion.create({ data: { socioId, parcelaId, desde } });
+        }
+        return parcelas.length;
+      };
 
       // Los números libres se reservan de una sola vez: dentro de la transacción nadie más
       // puede tomarlos, y así no hay que consultar el máximo fila por fila.
@@ -139,14 +159,19 @@ export class ImportacionService {
           },
         });
 
-        for (const p of parcelasDelSocio(fila, filas)) {
-          const ubicacion = ubicar(p);
-          const parcelaId = 'existente' in ubicacion ? ubicacion.existente.id : creadas.get(claveParcela(p));
-          // La previsualización ya se aseguró de que exista o se haya creado, y esté libre.
-          if (!parcelaId) throw conflicto(`La parcela ${p.codigo} de la fila ${fila.fila} ya no está disponible`, 'archivo');
-          await tx.asignacion.create({
-            data: { socioId: socio.id, parcelaId, desde: aFecha(datos.fechaAlta) },
-          });
+        await asignar(fila, socio.id, aFecha(datos.fechaAlta));
+      }
+
+      // Al socio que ya existía no se le toca nada: sus lotes corren desde su alta.
+      for (const fila of existentes) {
+        const socio = await tx.socio.findUniqueOrThrow({
+          where: { id: fila.socioExistente!.id },
+          select: { id: true, tipo: true, fechaAlta: true },
+        });
+        const asignadas = await asignar(fila, socio.id, socio.fechaAlta);
+        // Recibir una parcela convierte al suplente en titular, como al asignarla a mano.
+        if (asignadas > 0 && socio.tipo === 'SUPLENTE') {
+          await tx.socio.update({ where: { id: socio.id }, data: { tipo: 'TITULAR' } });
         }
       }
     });
@@ -169,27 +194,35 @@ export class ImportacionService {
     ubicar: (p: ParcelaImportada) => Ubicacion,
     hayLoteo: boolean,
   ): Promise<ResultadoImportacion> {
-    const principales = analisis.filas.filter((f) => f.socio && f.estado !== 'agrupada');
-    const dnis = principales.map((f) => f.socio!.dni);
+    const conSocio = analisis.filas.filter((f) => f.socio);
+    const dnis = [...new Set(conSocio.map((f) => f.socio!.dni))];
+    const existentes = await this.prisma.socio.findMany({
+      where: { dni: { in: dnis } },
+      select: { id: true, dni: true, numero: true, apellido: true, nombre: true, fechaBaja: true },
+    });
+    const porDni = new Map(existentes.map((s) => [s.dni, s]));
+
+    // El número y el CUIT solo importan en los socios que se dan de alta.
+    const principales = conSocio.filter((f) => f.estado !== 'agrupada' && !porDni.has(f.socio!.dni));
     const numeros = principales.flatMap((f) => (f.socio?.numero ? [f.socio.numero] : []));
     const cuits = principales.flatMap((f) => (f.socio?.cuit ? [f.socio.cuit] : []));
-
-    const [existentes, conNumero, conCuit] = await Promise.all([
-      this.prisma.socio.findMany({ where: { dni: { in: dnis } }, select: { dni: true, numero: true, apellido: true, nombre: true } }),
+    const [conNumero, conCuit] = await Promise.all([
       this.prisma.socio.findMany({ where: { numero: { in: numeros } }, select: { numero: true, dni: true } }),
       this.prisma.socio.findMany({ where: { cuit: { in: cuits } }, select: { cuit: true, dni: true } }),
     ]);
-
-    const porDni = new Map(existentes.map((s) => [s.dni, s]));
     const numerosTomados = new Map(conNumero.map((s) => [s.numero, s.dni]));
     const cuitsTomados = new Map(conCuit.map((s) => [s.cuit, s.dni]));
 
-    /** Las parcelas de la fila, marcando las que se crean; anota por qué no sirven las demás. */
-    const revisarParcelas = (f: FilaImportacion, errores: string[]): ParcelaImportada[] =>
+    /**
+     * Las parcelas de la fila, marcando las que se crean y las que ya son del socio; anota
+     * por qué no sirven las demás.
+     */
+    const revisarParcelas = (f: FilaImportacion, errores: string[], socioId?: number): ParcelaImportada[] =>
       f.parcelas.map((p) => {
         const ubicacion = ubicar(p);
         if ('error' in ubicacion) errores.push(ubicacion.error);
         else if ('crear' in ubicacion) return { ...p, nueva: true };
+        else if (socioId !== undefined && ubicacion.existente.socioId === socioId) return { ...p, yaAsignada: true };
         else if (ubicacion.existente.ocupada) errores.push(`La parcela ${p.codigo} ya está asignada a ${ubicacion.existente.titular}`);
         return p;
       });
@@ -210,19 +243,30 @@ export class ImportacionService {
       }
       if (!f.socio) return f;
 
-      // El socio que ya está cargado no se toca: la fila se omite y se informa.
-      const existente = f.estado !== 'agrupada' ? porDni.get(f.socio.dni) : undefined;
-      if (existente) {
-        return {
-          ...f,
-          estado: 'omitida' as const,
-          motivoOmitida: `Ya existe el socio N° ${existente.numero}, ${existente.apellido} ${existente.nombre}, con ese DNI`,
-        };
-      }
-
       const errores = [...f.errores];
       const advertencias = [...f.advertencias];
       let socio = f.socio;
+
+      // El socio que ya está cargado no se toca: solo recibe los lotes que todavía no tiene.
+      const existente = porDni.get(socio.dni);
+      if (existente) {
+        const parcelas = revisarParcelas(f, errores, existente.id);
+        const etiqueta = `N° ${existente.numero}, ${existente.apellido} ${existente.nombre}`;
+        if (existente.fechaBaja && parcelas.some((p) => !p.yaAsignada)) {
+          errores.push(`El socio ${etiqueta} está dado de baja: no se le pueden asignar parcelas`);
+        }
+        if (f.estado !== 'agrupada' && socio.numero !== null && socio.numero !== existente.numero) {
+          advertencias.push(`El archivo dice N° ${socio.numero}, pero el socio con ese DNI es el ${etiqueta}: los lotes van a ese`);
+        }
+        return {
+          ...f,
+          parcelas,
+          errores,
+          advertencias,
+          socioExistente: { id: existente.id, numero: existente.numero, apellido: existente.apellido, nombre: existente.nombre },
+          estado: errores.length ? ('error' as const) : f.estado === 'agrupada' ? ('agrupada' as const) : ('existente' as const),
+        };
+      }
 
       if (f.estado !== 'agrupada') {
         const dueñoDelNumero = socio.numero !== null ? numerosTomados.get(socio.numero) : undefined;
@@ -239,13 +283,28 @@ export class ImportacionService {
       return { ...f, socio, parcelas, errores, advertencias, estado: errores.length ? ('error' as const) : f.estado };
     });
 
-    // Si el socio de la fila principal ya existe, sus otros lotes tampoco se importan.
-    const omitidas = new Set(filas.filter((f) => f.estado === 'omitida').map((f) => f.fila));
-    const finales = filas.map((f) =>
-      f.agrupadaEn !== undefined && omitidas.has(f.agrupadaEn)
-        ? { ...f, estado: 'omitida' as const, errores: [], motivoOmitida: `Otro lote del socio de la fila ${f.agrupadaEn}, que ya existe` }
-        : f,
+    // El socio que ya existe y ya tiene todos sus lotes no tiene nada que importar: se omite
+    // con sus filas agrupadas. Las que tienen error se quedan así, porque frenan igual.
+    const sinNada = new Set(
+      filas.filter((f) => f.estado === 'existente' && parcelasDelSocio(f, filas).length === 0).map((f) => f.fila),
     );
+    const finales = filas.map((f): FilaImportacion => {
+      if (sinNada.has(f.fila)) {
+        const s = f.socioExistente!;
+        const tieneLotes = [f, ...filas.filter((a) => a.agrupadaEn === f.fila)].some((a) => a.parcelas.length > 0);
+        return {
+          ...f,
+          estado: 'omitida',
+          motivoOmitida: `Ya existe el socio N° ${s.numero}, ${s.apellido} ${s.nombre}, ${
+            tieneLotes ? 'y ya tiene asignados los lotes del archivo' : 'y el archivo no le trae lotes'
+          }`,
+        };
+      }
+      if (f.estado === 'agrupada' && f.agrupadaEn !== undefined && sinNada.has(f.agrupadaEn)) {
+        return { ...f, estado: 'omitida', motivoOmitida: `Otro lote del socio de la fila ${f.agrupadaEn}, que ya lo tiene asignado` };
+      }
+      return f;
+    });
 
     return resumir(finales, analisis.columnasFaltantes);
   }
@@ -277,7 +336,7 @@ export class ImportacionService {
               select: {
                 id: true,
                 codigo: true,
-                asignaciones: { where: { hasta: null }, select: { socio: { select: { apellido: true, nombre: true } } }, take: 1 },
+                asignaciones: { where: { hasta: null }, select: { socio: { select: { id: true, apellido: true, nombre: true } } }, take: 1 },
               },
             },
           },
@@ -293,6 +352,7 @@ export class ImportacionService {
         existente: {
           id: p.id,
           ocupada: p.asignaciones.length > 0,
+          socioId: p.asignaciones[0]?.socio.id ?? null,
           titular: p.asignaciones[0] ? `${p.asignaciones[0].socio.apellido} ${p.asignaciones[0].socio.nombre}` : '',
         },
       })),
@@ -327,7 +387,7 @@ export class ImportacionService {
         sector: { select: { id: true, nombre: true, loteo: { select: { id: true, nombre: true } } } },
         asignaciones: {
           where: { hasta: null },
-          select: { socio: { select: { apellido: true, nombre: true } } },
+          select: { socio: { select: { id: true, apellido: true, nombre: true } } },
           take: 1,
         },
       },
@@ -340,6 +400,7 @@ export class ImportacionService {
       const dato = {
         id: p.id,
         ocupada: !!vigente,
+        socioId: vigente?.socio.id ?? null,
         titular: vigente ? `${vigente.socio.apellido} ${vigente.socio.nombre}` : '',
       };
       mapa.set(normalizarEncabezado(etiquetaParcela(p)), dato);

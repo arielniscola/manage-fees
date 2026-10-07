@@ -6,6 +6,7 @@ import {
   mapearColumnas,
   parcelasDeTexto,
   parcelasDelSocio,
+  resumir,
   separarNombre,
   siNoDeTexto,
   superficieDeTexto,
@@ -163,6 +164,21 @@ describe('planilla con una fila por lote', () => {
     expect(r.filas[1]).toMatchObject({ estado: 'agrupada', agrupadaEn: 2 });
     expect(parcelasDelSocio(r.filas[0], r.filas).map((p) => p.codigo)).toEqual(['7-1', '7-2']);
     expect(r).toMatchObject({ nuevos: 1, asignaciones: 2 });
+  });
+
+  it('a un socio que ya existe solo le cuenta los lotes que todavía no tiene', () => {
+    const r = analizarFilas(ENCABEZADOS_LOTE, [
+      fila('1', '7', '1', '', 'SOSA, VIVIANA BEATRIZ', '22358431', '', ''),
+      fila('2', '7', '2', '', 'SOSA, VIVIANA BEATRIZ', '22358431', '', ''),
+    ]);
+    // Lo que marca la API al contrastar con la base: el socio existe y ya tiene el 7-1.
+    const [principal, agrupada] = r.filas;
+    const filas = [
+      { ...principal, estado: 'existente' as const, parcelas: principal.parcelas.map((p) => ({ ...p, yaAsignada: true })) },
+      agrupada,
+    ];
+    expect(parcelasDelSocio(filas[0], filas).map((p) => p.codigo)).toEqual(['7-2']);
+    expect(resumir(filas)).toMatchObject({ nuevos: 0, existentes: 1, asignaciones: 1 });
   });
 
   it('una fila sin nombre ni DNI es un lote libre', () => {

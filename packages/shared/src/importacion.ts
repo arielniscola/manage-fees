@@ -69,9 +69,10 @@ export const ETIQUETA_COLUMNA: Record<ColumnaImportacion, string> = {
 
 /**
  * Qué va a pasar con una fila. `agrupada` es otro lote de un socio que ya apareció más
- * arriba; `sinSocio` es un lote sin titular. La API completa `omitida` mirando la base.
+ * arriba; `sinSocio` es un lote sin titular. La API completa mirando la base `existente`,
+ * un socio ya cargado al que solo se le asignan sus lotes, y `omitida`.
  */
-export type EstadoFila = 'nueva' | 'agrupada' | 'sinSocio' | 'omitida' | 'error';
+export type EstadoFila = 'nueva' | 'existente' | 'agrupada' | 'sinSocio' | 'omitida' | 'error';
 
 export interface ParcelaImportada {
   /** «7-1». */
@@ -81,6 +82,16 @@ export interface ParcelaImportada {
   superficieM2: number | null;
   /** Lo marca la API: la parcela no existe y se crea al importar. */
   nueva?: boolean;
+  /** Lo marca la API: la parcela ya es del socio de la fila, así que no se vuelve a asignar. */
+  yaAsignada?: boolean;
+}
+
+/** El socio ya cargado con el DNI de la fila. */
+export interface SocioExistente {
+  id: number;
+  numero: number;
+  apellido: string;
+  nombre: string;
 }
 
 export interface FilaImportacion {
@@ -95,6 +106,8 @@ export interface FilaImportacion {
   motivoOmitida?: string;
   /** En una fila `agrupada`, la fila del mismo socio que lo da de alta. */
   agrupadaEn?: number;
+  /** En una fila `existente` y sus agrupadas, el socio de la base que recibe los lotes. */
+  socioExistente?: SocioExistente;
   /** Los datos ya normalizados. Null si la fila no se pudo interpretar o no tiene socio. */
   socio: SocioCrear | null;
   /** Las parcelas de esta fila. Las de sus filas agrupadas se suman al importar. */
@@ -108,6 +121,8 @@ export interface ResultadoImportacion {
   total: number;
   /** Socios que se dan de alta. */
   nuevos: number;
+  /** Socios ya cargados que reciben lotes. */
+  existentes: number;
   omitidos: number;
   conError: number;
   conAdvertencias: number;
@@ -460,29 +475,33 @@ function casillero(texto: string, cual: string, advertencias: string[]): boolean
   return valor ?? false;
 }
 
-/** Las parcelas que se le asignan al socio de una fila, contando las de sus filas agrupadas. */
+/**
+ * Las parcelas que se le asignan al socio de una fila, contando las de sus filas agrupadas.
+ * Las que ya son suyas quedan afuera: no hay nada que asignar.
+ */
 export function parcelasDelSocio(principal: FilaImportacion, filas: FilaImportacion[]): ParcelaImportada[] {
   return [
     ...principal.parcelas,
     ...filas.filter((f) => f.estado === 'agrupada' && f.agrupadaEn === principal.fila).flatMap((f) => f.parcelas),
-  ];
+  ].filter((p) => !p.yaAsignada);
 }
 
 /** Recuenta los totales. La API la vuelve a llamar después de contrastar con la base. */
 export function resumir(filas: FilaImportacion[], columnasFaltantes: ColumnaImportacion[] = []): ResultadoImportacion {
-  const importables = filas.filter((f) => f.estado === 'nueva' || f.estado === 'agrupada');
+  const importables = filas.filter((f) => f.estado === 'nueva' || f.estado === 'existente' || f.estado === 'agrupada');
   return {
     filas,
     total: filas.length,
     nuevos: filas.filter((f) => f.estado === 'nueva').length,
+    existentes: filas.filter((f) => f.estado === 'existente').length,
     omitidos: filas.filter((f) => f.estado === 'omitida').length,
     conError: filas.filter((f) => f.estado === 'error').length,
     conAdvertencias: filas.filter((f) => f.estado !== 'error' && f.estado !== 'omitida' && f.advertencias.length > 0).length,
     sinSocio: filas.filter((f) => f.estado === 'sinSocio').length,
     columnasFaltantes,
-    asignaciones: importables.reduce((t, f) => t + f.parcelas.length, 0),
+    asignaciones: importables.reduce((t, f) => t + f.parcelas.filter((p) => !p.yaAsignada).length, 0),
     parcelasNuevas: filas
-      .filter((f) => f.estado === 'nueva' || f.estado === 'agrupada' || f.estado === 'sinSocio')
+      .filter((f) => f.estado !== 'omitida' && f.estado !== 'error')
       .reduce((t, f) => t + f.parcelas.filter((p) => p.nueva).length, 0),
   };
 }
