@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link } from 'react-router';
-import { CalendarClock, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Ban, CalendarClock, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   ALCANCES_TARIFA,
@@ -30,7 +30,7 @@ import { Encabezado } from '@/layout/AppLayout';
 import { ApiError } from '@/lib/api';
 import { fecha } from '@/lib/formato';
 import { useLoteos } from '@/features/parcelas/api';
-import { useEliminarTarifa, useGuardarTarifa, useTarifas } from './api';
+import { useCambiarActivaTarifa, useEliminarTarifa, useGuardarTarifa, useTarifas } from './api';
 
 /** Historial a la vista dentro de la cuota por parcela: el general o el id de un loteo. */
 type Historial = 'general' | `${number}`;
@@ -52,9 +52,11 @@ export function ConfiguracionCuotaPage() {
   const tarifas = todas?.filter((t) => (t.loteo?.id ?? null) === (loteo?.id ?? null));
   const [editando, setEditando] = useState<Tarifa | 'nueva' | null>(null);
   const [eliminando, setEliminando] = useState<Tarifa | null>(null);
+  const [cambiandoActiva, setCambiandoActiva] = useState<Tarifa | null>(null);
 
-  const vigente = tarifas?.find((t) => t.vigente) ?? null;
-  const proxima = tarifas?.filter((t) => t.futura).at(-1) ?? null;
+  const activas = tarifas?.filter((t) => t.activa) ?? [];
+  const vigente = activas.find((t) => t.vigente) ?? null;
+  const proxima = activas.filter((t) => t.futura).at(-1) ?? null;
 
   return (
     <>
@@ -117,7 +119,7 @@ export function ConfiguracionCuotaPage() {
           <Card className="overflow-hidden">
             <CardHeader
               titulo="Historial de tarifas"
-              descripcion="Cada fila rige desde su mes y hasta que empieza la siguiente. Las cuotas ya generadas conservan el importe con el que se crearon."
+              descripcion="Cada fila rige desde su mes y hasta que empieza la siguiente activa. Las cuotas ya generadas conservan el importe con el que se crearon."
             />
             {tarifas.length === 0 ? (
               <Vacio
@@ -147,11 +149,17 @@ export function ConfiguracionCuotaPage() {
                 </thead>
                 <tbody>
                   {tarifas.map((t) => (
-                    <tr key={t.id} className="hover:bg-superficie-2">
+                    <tr key={t.id} className={`hover:bg-superficie-2 ${t.activa ? '' : 'text-tenue [&_.font-semibold]:line-through'}`}>
                       <Td className="whitespace-nowrap">
                         <span className="font-medium first-letter:uppercase">{etiquetaPeriodo(t.vigenteDesde, 'MENSUAL')}</span>
                         <span className="ml-2 inline-flex align-middle">
-                          {t.vigente ? <Badge tono="ok">Vigente</Badge> : t.futura ? <Badge tono="pend">Futura</Badge> : null}
+                          {!t.activa ? (
+                            <Badge tono="baja">Desactivada</Badge>
+                          ) : t.vigente ? (
+                            <Badge tono="ok">Vigente</Badge>
+                          ) : t.futura ? (
+                            <Badge tono="pend">Futura</Badge>
+                          ) : null}
                         </span>
                       </Td>
                       <Td className="text-right font-semibold tabular">{pesos(t.importe)}</Td>
@@ -169,8 +177,14 @@ export function ConfiguracionCuotaPage() {
                                 <Trash2 />
                               </IconoBoton>
                             </>
+                          ) : t.activa ? (
+                            <IconoBoton etiqueta={`Desactivar la tarifa de ${t.vigenteDesde}`} onClick={() => setCambiandoActiva(t)} peligro>
+                              <Ban />
+                            </IconoBoton>
                           ) : (
-                            <span className="pr-2 text-xs text-tenue">Ya generó cuotas</span>
+                            <IconoBoton etiqueta={`Reactivar la tarifa de ${t.vigenteDesde}`} onClick={() => setCambiandoActiva(t)}>
+                              <RotateCcw />
+                            </IconoBoton>
                           )}
                         </div>
                       </Td>
@@ -183,8 +197,9 @@ export function ConfiguracionCuotaPage() {
         </>
       )}
 
-      <TarifaFormDialog alcance={alcance} loteo={loteo} tarifa={editando} tarifas={tarifas ?? []} onCerrar={() => setEditando(null)} />
+      <TarifaFormDialog alcance={alcance} loteo={loteo} tarifa={editando} tarifas={activas} onCerrar={() => setEditando(null)} />
       <EliminarTarifaDialog tarifa={eliminando} onCerrar={() => setEliminando(null)} />
+      <ActivaTarifaDialog tarifa={cambiandoActiva} onCerrar={() => setCambiandoActiva(null)} />
     </>
   );
 }
@@ -427,6 +442,54 @@ function EliminarTarifaDialog({ tarifa, onCerrar }: { tarifa: Tarifa | null; onC
             }
           >
             Eliminar
+          </Button>
+        </>
+      }
+    />
+  );
+}
+
+function ActivaTarifaDialog({ tarifa, onCerrar }: { tarifa: Tarifa | null; onCerrar: () => void }) {
+  const cambiar = useCambiarActivaTarifa();
+  const reactivar = !!tarifa && !tarifa.activa;
+  const reemplazo = tarifa?.loteo
+    ? `las otras tarifas activas de ${tarifa.loteo.nombre}, o la general si no le queda ninguna`
+    : 'las otras tarifas activas de su historial';
+
+  return (
+    <Dialog
+      abierto={!!tarifa}
+      onAbiertoChange={(v) => !v && onCerrar()}
+      ancho="sm"
+      titulo={reactivar ? 'Reactivar tarifa' : 'Desactivar tarifa'}
+      descripcion={
+        reactivar
+          ? 'La tarifa vuelve a su historial y valoriza los períodos que todavía no se generaron desde su mes. Las cuotas ya generadas no cambian.'
+          : `La tarifa deja de valorizar los períodos que todavía no se generaron: se toman ${reemplazo}. Las cuotas que ya generó no cambian.`
+      }
+      pie={
+        <>
+          <Button variante="secundario" onClick={onCerrar}>
+            Cancelar
+          </Button>
+          <Button
+            variante={reactivar ? 'primario' : 'peligro'}
+            cargando={cambiar.isPending}
+            onClick={() =>
+              tarifa &&
+              cambiar.mutate(
+                { id: tarifa.id, activa: reactivar },
+                {
+                  onSuccess: () => {
+                    toast.success(reactivar ? 'Tarifa reactivada' : 'Tarifa desactivada');
+                    onCerrar();
+                  },
+                  onError: (e) => toast.error(e.message),
+                },
+              )
+            }
+          >
+            {reactivar ? 'Reactivar' : 'Desactivar'}
           </Button>
         </>
       }

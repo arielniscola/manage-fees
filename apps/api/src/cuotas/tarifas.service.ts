@@ -50,9 +50,9 @@ export class TarifasService {
     const ultimos = await Promise.all(historiales.map((t) => this.ultimoPeriodoGenerado(t.alcance, t.loteoId)));
     const ultimoPeriodo = new Map(historiales.map((t, i) => [historial(t), ultimos[i]]));
     const hoy = mesActual();
-    // La vigente de cada historial es la última que ya empezó a regir.
+    // La vigente de cada historial es la última activa que ya empezó a regir.
     const ultimaPorHistorial = new Map<string, number>();
-    for (const t of tarifas) if (mesVigencia(t) <= hoy) ultimaPorHistorial.set(historial(t), t.id);
+    for (const t of tarifas) if (t.activa && mesVigencia(t) <= hoy) ultimaPorHistorial.set(historial(t), t.id);
     const vigentes = new Set(ultimaPorHistorial.values());
 
     return tarifas
@@ -90,7 +90,7 @@ export class TarifasService {
     } catch (e) {
       throw this.traducirDuplicado(e);
     }
-    return this.buscarEnLista(data.alcance, data.loteoId, data.vigenteDesde);
+    return this.buscarEnLista({ alcance: data.alcance, loteoId: data.loteoId, mes: data.vigenteDesde });
   }
 
   /** Solo se toca una tarifa que todavía no generó ninguna cuota. */
@@ -114,12 +114,38 @@ export class TarifasService {
     } catch (e) {
       throw this.traducirDuplicado(e);
     }
-    return this.buscarEnLista(actual.alcance, actual.loteoId, data.vigenteDesde ?? mesVigencia(actual));
+    return this.buscarEnLista({ alcance: actual.alcance, loteoId: actual.loteoId, mes: data.vigenteDesde ?? mesVigencia(actual) });
   }
 
   async eliminar(id: number): Promise<void> {
     await this.exigirEditable(id);
     await this.prisma.tarifa.delete({ where: { id } });
+  }
+
+  /**
+   * La baja de una tarifa que ya generó cuotas: deja de valorizar los períodos que todavía
+   * no se generaron y su historial sigue con las demás activas —un loteo sin ninguna vuelve
+   * a la general—. Las cuotas que ya generó no cambian.
+   */
+  async desactivar(id: number): Promise<TarifaDTO> {
+    const tarifa = await this.prisma.tarifa.findUnique({ where: { id } });
+    if (!tarifa) throw noEncontrado('No existe la tarifa');
+    if (!tarifa.activa) throw conflicto('La tarifa ya está desactivada');
+    await this.prisma.tarifa.update({ where: { id }, data: { activa: false } });
+    return this.buscarEnLista({ alcance: tarifa.alcance, id });
+  }
+
+  /** Vuelve a sumar la tarifa a su historial, para los períodos que todavía no se generaron. */
+  async reactivar(id: number): Promise<TarifaDTO> {
+    const tarifa = await this.prisma.tarifa.findUnique({ where: { id } });
+    if (!tarifa) throw noEncontrado('No existe la tarifa');
+    if (tarifa.activa) throw conflicto('La tarifa ya está activa');
+    try {
+      await this.prisma.tarifa.update({ where: { id }, data: { activa: true } });
+    } catch (e) {
+      throw this.traducirDuplicado(e);
+    }
+    return this.buscarEnLista({ alcance: tarifa.alcance, id });
   }
 
   /**
@@ -148,7 +174,7 @@ export class TarifasService {
   private async validarVigencia(alcance: AlcanceTarifa, loteoId: number | null, mes: string): Promise<void> {
     const ultimo = await this.ultimoPeriodoGenerado(alcance, loteoId);
     if (ultimo && mes <= ultimo) {
-      const tarifa = await this.prisma.tarifa.findFirst({ where: { alcance, loteoId }, orderBy: { vigenteDesde: 'desc' } });
+      const tarifa = await this.prisma.tarifa.findFirst({ where: { alcance, loteoId, activa: true }, orderBy: { vigenteDesde: 'desc' } });
       const periodicidad = tarifa?.periodicidad ?? 'MENSUAL';
       throw reglaIncumplida(
         `Ya hay ${ETIQUETA_ALCANCE[alcance].toLowerCase()}s generadas hasta ${etiquetaPeriodo(ultimo, periodicidad)}. ` +
@@ -161,6 +187,7 @@ export class TarifasService {
   private async exigirEditable(id: number): Promise<Tarifa> {
     const tarifa = await this.prisma.tarifa.findUnique({ where: { id } });
     if (!tarifa) throw noEncontrado('No existe la tarifa');
+    if (!tarifa.activa) throw conflicto('La tarifa está desactivada: reactivala para poder cambiarla');
 
     const ultimo = await this.ultimoPeriodoGenerado(tarifa.alcance, tarifa.loteoId);
     if (ultimo && mesVigencia(tarifa) <= ultimo) {
@@ -169,10 +196,17 @@ export class TarifasService {
     return tarifa;
   }
 
-  /** Devuelve la tarifa recién guardada con sus datos calculados (vigente, futura, etc.). */
-  private async buscarEnLista(alcance: AlcanceTarifa, loteoId: number | null, mes: string): Promise<TarifaDTO> {
-    const lista = await this.listar({ alcance });
-    return lista.find((t) => (t.loteo?.id ?? null) === loteoId && t.vigenteDesde === mes)!;
+  /**
+   * Devuelve la tarifa recién guardada con sus datos calculados (vigente, futura, etc.):
+   * por su id, o por historial y mes, que entre las activas es único.
+   */
+  private async buscarEnLista(
+    busca: { alcance: AlcanceTarifa } & ({ id: number } | { loteoId: number | null; mes: string }),
+  ): Promise<TarifaDTO> {
+    const lista = await this.listar({ alcance: busca.alcance });
+    return lista.find((t) =>
+      'id' in busca ? t.id === busca.id : t.activa && (t.loteo?.id ?? null) === busca.loteoId && t.vigenteDesde === busca.mes,
+    )!;
   }
 
   private aDTO(
@@ -191,7 +225,8 @@ export class TarifasService {
       vigente: ctx.vigente,
       futura: vigenteDesde > mesActual(),
       cuotasGeneradas: ctx.cuotas,
-      puedeEditar: !ctx.ultimoPeriodo || vigenteDesde > ctx.ultimoPeriodo,
+      activa: t.activa,
+      puedeEditar: t.activa && (!ctx.ultimoPeriodo || vigenteDesde > ctx.ultimoPeriodo),
     };
   }
 

@@ -77,7 +77,9 @@ export interface Tarifa {
   /** Todavía no empezó a regir. */
   futura: boolean;
   cuotasGeneradas: number;
-  /** Solo se edita o elimina una tarifa que aún no generó cuotas. */
+  /** Una desactivada no valoriza períodos nuevos, pero conserva las cuotas que generó. */
+  activa: boolean;
+  /** Solo se edita o elimina una tarifa activa que aún no generó cuotas. */
   puedeEditar: boolean;
 }
 

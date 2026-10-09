@@ -47,6 +47,18 @@ export class TarifasController {
   eliminar(@Param('id', ParseIntPipe) id: number) {
     return this.tarifas.eliminar(id);
   }
+
+  @Post(':id/desactivar')
+  @HttpCode(200)
+  desactivar(@Param('id', ParseIntPipe) id: number) {
+    return this.tarifas.desactivar(id);
+  }
+
+  @Post(':id/reactivar')
+  @HttpCode(200)
+  reactivar(@Param('id', ParseIntPipe) id: number) {
+    return this.tarifas.reactivar(id);
+  }
 }
 
 @Controller('cuotas')

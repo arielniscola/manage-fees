@@ -138,3 +138,13 @@ export function useEliminarTarifa() {
     onSuccess: invalidar,
   });
 }
+
+/** Desactiva una tarifa activa o reactiva una desactivada. */
+export function useCambiarActivaTarifa() {
+  const invalidar = useInvalidar();
+  return useMutation({
+    mutationFn: ({ id, activa }: { id: number; activa: boolean }) =>
+      api.post<Tarifa>(`/tarifas/${id}/${activa ? 'reactivar' : 'desactivar'}`, {}),
+    onSuccess: invalidar,
+  });
+}

@@ -219,6 +219,8 @@ model Tarifa {
   diaVencimiento Int           @default(10)
   /// Primer día del mes desde el que rige, dentro de su alcance.
   vigenteDesde   DateTime      @db.Date
+  /// Una tarifa desactivada ya no valoriza períodos nuevos; sus cuotas generadas quedan.
+  activa         Boolean       @default(true)
   cuotas         Cuota[]
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt

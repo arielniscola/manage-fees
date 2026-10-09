@@ -69,7 +69,7 @@ export class GeneracionService {
    * corren a la vez.
    */
   async generar({ hasta, desde, loteoId, socioId, simular }: GenerarCuotas): Promise<ResultadoGeneracion> {
-    const tarifas = await this.prisma.tarifa.findMany({ orderBy: { vigenteDesde: 'asc' } });
+    const tarifas = await this.prisma.tarifa.findMany({ where: { activa: true }, orderBy: { vigenteDesde: 'asc' } });
     const porAlcance = {
       PARCELA: tarifas.filter((t) => t.alcance === 'PARCELA'),
       SOCIO: tarifas.filter((t) => t.alcance === 'SOCIO'),
@@ -136,7 +136,7 @@ export class GeneracionService {
    * genera la corrida de todos los días, y su titular puede no ser el mismo que hoy.
    */
   async candidatasDeSocio(socioId: number, hastaMes: string, db: Cliente = this.prisma): Promise<Candidata[]> {
-    const tarifas = await db.tarifa.findMany({ orderBy: { vigenteDesde: 'asc' } });
+    const tarifas = await db.tarifa.findMany({ where: { activa: true }, orderBy: { vigenteDesde: 'asc' } });
     const porAlcance = {
       PARCELA: tarifas.filter((t) => t.alcance === 'PARCELA'),
       SOCIO: tarifas.filter((t) => t.alcance === 'SOCIO'),
