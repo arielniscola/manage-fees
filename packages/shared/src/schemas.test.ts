@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  anticipoEntradaSchema,
   asignacionCrearSchema,
   cambiarPasswordSchema,
   cobroListarSchema,
@@ -90,6 +91,14 @@ describe('asignacionCrearSchema', () => {
     const r = asignacionCrearSchema.safeParse({ parcelaId: 1, desde: '2026-10-05', anticipo: { importe: '1000', vencimiento: '2026-10-01' } });
     expect(r.success).toBe(false);
     if (!r.success) expect(r.error.issues[0].path).toEqual(['anticipo', 'vencimiento']);
+  });
+});
+
+describe('anticipoEntradaSchema', () => {
+  it('pasa el importe a centavos y exige el vencimiento', () => {
+    expect(anticipoEntradaSchema.parse({ importe: '50.000', vencimiento: '2026-10-10' })).toEqual({ importe: 5_000_000, vencimiento: '2026-10-10' });
+    expect(anticipoEntradaSchema.safeParse({ importe: '50.000' }).success).toBe(false);
+    expect(anticipoEntradaSchema.safeParse({ importe: '0', vencimiento: '2026-10-10' }).success).toBe(false);
   });
 });
 

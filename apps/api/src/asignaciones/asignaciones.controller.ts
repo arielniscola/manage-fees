@@ -1,7 +1,9 @@
 import { Body, Controller, HttpCode, Param, ParseIntPipe, Post } from '@nestjs/common';
 import {
+  anticipoEntradaSchema,
   asignacionCrearSchema,
   asignacionLiberarSchema,
+  type AnticipoEntrada,
   type AsignacionCrear,
   type AsignacionLiberar,
 } from '@mf/shared';
@@ -15,6 +17,11 @@ export class AsignacionesController {
   @Post('socios/:socioId/asignaciones')
   asignar(@Param('socioId', ParseIntPipe) socioId: number, @Body(new ZodPipe(asignacionCrearSchema)) body: AsignacionCrear) {
     return this.asignaciones.asignar(socioId, body);
+  }
+
+  @Post('asignaciones/:id/anticipo')
+  cargarAnticipo(@Param('id', ParseIntPipe) id: number, @Body(new ZodPipe(anticipoEntradaSchema)) body: AnticipoEntrada) {
+    return this.asignaciones.cargarAnticipo(id, body);
   }
 
   @Post('asignaciones/:id/liberar')

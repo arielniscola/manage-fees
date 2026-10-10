@@ -20,7 +20,7 @@ import { CuotasDelSocio } from '@/features/cuotas/CuotasDelSocio';
 import { GenerarPeriodoDialog } from '@/features/cuotas/GenerarPeriodoDialog';
 import { useReactivarSocio, useSocio } from './api';
 import { CargarHistorialDialog } from './CargarHistorialDialog';
-import { AsignarParcelaDialog, BajaSocioDialog, EliminarSocioDialog, LiberarParcelaDialog } from './dialogs';
+import { AsignarParcelaDialog, BajaSocioDialog, CargarAnticipoDialog, EliminarSocioDialog, LiberarParcelaDialog } from './dialogs';
 
 export function SocioDetallePage() {
   const { id } = useParams();
@@ -171,6 +171,7 @@ function AccionesSocio({ socio, onEditar }: { socio: SocioDetalle; onEditar: () 
 function ParcelasSocio({ socio }: { socio: SocioDetalle }) {
   const [asignar, setAsignar] = useState(false);
   const [liberar, setLiberar] = useState<AsignacionDeSocio | null>(null);
+  const [anticipo, setAnticipo] = useState<AsignacionDeSocio | null>(null);
   const vigentes = socio.asignaciones.filter((a) => !a.hasta);
   const anteriores = socio.asignaciones.filter((a) => a.hasta);
 
@@ -211,6 +212,11 @@ function ParcelasSocio({ socio }: { socio: SocioDetalle }) {
                 <Td className="tabular">{fecha(a.desde)}</Td>
                 <Td className="tabular">{a.hasta ? fecha(a.hasta) : <Badge tono="ok">Vigente</Badge>}</Td>
                 <Td className="text-right">
+                  {a.anticipoPendiente && socio.estado === 'activo' && (
+                    <Button variante="terciario" tamanio="sm" onClick={() => setAnticipo(a)}>
+                      Cargar anticipo
+                    </Button>
+                  )}
                   {!a.hasta && (
                     <Button variante="terciario" tamanio="sm" onClick={() => setLiberar(a)}>
                       Liberar
@@ -223,6 +229,7 @@ function ParcelasSocio({ socio }: { socio: SocioDetalle }) {
         </Tabla>
       )}
       <AsignarParcelaDialog socio={socio} abierto={asignar} onAbiertoChange={setAsignar} />
+      <CargarAnticipoDialog asignacion={anticipo} onCerrar={() => setAnticipo(null)} />
       <LiberarParcelaDialog asignacion={liberar} onCerrar={() => setLiberar(null)} />
     </Card>
   );

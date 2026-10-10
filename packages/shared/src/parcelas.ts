@@ -321,6 +321,18 @@ export const transferenciaListarSchema = paginacionSchema.extend({
 export type TransferenciaListarInput = z.input<typeof transferenciaListarSchema>;
 export type TransferenciaListar = z.output<typeof transferenciaListarSchema>;
 
+/**
+ * Anticipo de entrada de una asignación. Va junto con la asignación, o se carga después
+ * sobre una vigente que quedó sin él; que no venza antes de la asignación lo valida el
+ * servidor en ese caso, que es el que conoce la fecha.
+ */
+export const anticipoEntradaSchema = z.object({
+  importe: importeSchema,
+  vencimiento: fechaSchema,
+});
+export type AnticipoEntradaInput = z.input<typeof anticipoEntradaSchema>;
+export type AnticipoEntrada = z.output<typeof anticipoEntradaSchema>;
+
 export const asignacionCrearSchema = z
   .object({
     parcelaId: z.coerce.number({ invalid_type_error: 'Elegí una parcela' }).int().positive('Elegí una parcela'),
@@ -329,12 +341,7 @@ export const asignacionCrearSchema = z
      * Anticipo de entrada. Obligatorio si el loteo de la parcela lo cobra, y no se acepta si
      * no: eso lo valida el servidor, que es el que sabe de qué loteo es la parcela.
      */
-    anticipo: z
-      .object({
-        importe: importeSchema,
-        vencimiento: fechaSchema,
-      })
-      .optional(),
+    anticipo: anticipoEntradaSchema.optional(),
   })
   .refine((a) => !a.anticipo || a.anticipo.vencimiento >= a.desde, {
     message: 'El vencimiento del anticipo no puede ser anterior a la asignación',

@@ -1,5 +1,6 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
+  AnticipoEntradaInput,
   AsignacionCrearInput,
   AsignacionLiberarInput,
   Paginado,
@@ -112,6 +113,21 @@ export function useAsignarParcela(socioId: number) {
   return useMutation({
     mutationFn: (data: AsignacionCrearInput) => api.post(`/socios/${socioId}/asignaciones`, data),
     onSuccess: () => invalidar(),
+  });
+}
+
+/** Carga el anticipo de entrada de una asignación que quedó sin él: aparece una cuota nueva. */
+export function useCargarAnticipo() {
+  const qc = useQueryClient();
+  const invalidar = useInvalidar();
+  return useMutation({
+    mutationFn: ({ asignacionId, ...data }: AnticipoEntradaInput & { asignacionId: number }) =>
+      api.post(`/asignaciones/${asignacionId}/anticipo`, data),
+    onSuccess: () => {
+      invalidar();
+      void qc.invalidateQueries({ queryKey: ['cuotas'] });
+      void qc.invalidateQueries({ queryKey: ['panel'] });
+    },
   });
 }
 

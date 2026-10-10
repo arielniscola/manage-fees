@@ -141,14 +141,18 @@ export class SociosService {
       include: {
         asignaciones: {
           orderBy: [{ hasta: { sort: 'desc', nulls: 'first' } }, { desde: 'desc' }],
-          include: { parcela: parcelaResumen },
+          include: { parcela: parcelaResumen, cuotas: { where: { origen: 'ANTICIPO' }, select: { id: true } } },
         },
       },
     });
     if (!socio) throw noEncontrado('No existe el socio');
 
     const vigentes = socio.asignaciones.filter((a) => a.hasta === null);
-    const cuentas = await this.estadoDeCuenta([id]);
+    const [cuentas, loteosConAnticipo] = await Promise.all([
+      this.estadoDeCuenta([id]),
+      this.prisma.loteo.findMany({ where: { cobraAnticipo: true }, select: { id: true } }),
+    ]);
+    const cobranAnticipo = new Set(loteosConAnticipo.map((l) => l.id));
     return {
       ...this.aListItem({ ...socio, asignaciones: vigentes }, cuentas.get(id)),
       direccion: socio.direccion,
@@ -163,6 +167,8 @@ export class SociosService {
         id: a.id,
         desde: deFecha(a.desde),
         hasta: deFechaNullable(a.hasta),
+        anticipoPendiente:
+          a.hasta === null && a.cuotas.length === 0 && cobranAnticipo.has(a.parcela.sector?.loteo?.id ?? 0),
         parcela: { ...aParcelaUbicada(a.parcela), sector: a.parcela.sector },
       })),
     };

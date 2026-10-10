@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { mesDe, type AsignacionCrear, type AsignacionLiberar } from '@mf/shared';
+import { mesDe, type AnticipoEntrada, type AsignacionCrear, type AsignacionLiberar } from '@mf/shared';
 import { conflicto, noEncontrado, reglaIncumplida } from '../common/errores';
 import { aFecha, deFecha, deFechaNullable, fechaLegible } from '../common/fechas';
 import { esDuplicado, PrismaService } from '../prisma/prisma.module';
@@ -74,6 +74,59 @@ export class AsignacionesService {
     } catch (e) {
       // Índice único parcial: otra operación asignó la parcela al mismo tiempo.
       if (esDuplicado(e)) throw conflicto(`La parcela ${parcela.codigo} ya está asignada`, 'parcelaId');
+      throw e;
+    }
+  }
+
+  /**
+   * Carga el anticipo de entrada de una asignación vigente que quedó sin él: la parcela se
+   * asignó antes de que el loteo lo cobrara, o vino de una importación.
+   */
+  async cargarAnticipo(id: number, { importe, vencimiento }: AnticipoEntrada) {
+    const a = await this.prisma.asignacion.findUnique({
+      where: { id },
+      include: {
+        parcela: { select: { codigo: true, sector: { select: { loteo: { select: { nombre: true, cobraAnticipo: true } } } } } },
+        cuotas: { where: { origen: 'ANTICIPO' }, select: { estado: true } },
+      },
+    });
+    if (!a) throw noEncontrado('No existe la asignación');
+    if (a.hasta) throw conflicto('La parcela ya fue liberada');
+
+    const loteo = a.parcela.sector?.loteo;
+    if (!loteo?.cobraAnticipo) throw reglaIncumplida('El loteo de la parcela no cobra anticipo de entrada', 'importe');
+
+    const existente = a.cuotas[0];
+    if (existente) {
+      throw conflicto(
+        existente.estado === 'ANULADA'
+          ? `La parcela ${a.parcela.codigo} ya tuvo un anticipo, que está anulado: eliminá esa cuota para cargar otro`
+          : `La parcela ${a.parcela.codigo} ya tiene su anticipo cargado`,
+      );
+    }
+
+    const vence = aFecha(vencimiento);
+    if (vence < a.desde) {
+      throw reglaIncumplida(`El vencimiento no puede ser anterior a la asignación (${fechaLegible(a.desde)})`, 'vencimiento');
+    }
+
+    try {
+      const cuota = await this.prisma.cuota.create({
+        data: {
+          origen: 'ANTICIPO',
+          socioId: a.socioId,
+          asignacionId: a.id,
+          parcelaId: a.parcelaId,
+          periodo: mesDe(deFecha(a.desde)),
+          periodicidad: 'MENSUAL',
+          importe,
+          vencimiento: vence,
+        },
+      });
+      return { id: cuota.id, asignacionId: a.id, importe, vencimiento };
+    } catch (e) {
+      // Índice único parcial: otra operación cargó el anticipo al mismo tiempo.
+      if (esDuplicado(e)) throw conflicto(`La parcela ${a.parcela.codigo} ya tiene su anticipo cargado`);
       throw e;
     }
   }

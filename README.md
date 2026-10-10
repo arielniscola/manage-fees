@@ -80,6 +80,7 @@ Si cambiás algo en `packages/shared`, volvé a correr `npm run build:shared`
 | POST | `/api/socios/:id/baja` | Baja: libera sus parcelas con la misma fecha |
 | POST | `/api/socios/:id/reactivar` | Reactivación |
 | POST | `/api/socios/:id/asignaciones` | Asignar una parcela libre |
+| POST | `/api/asignaciones/:id/anticipo` | Cargar el anticipo de entrada de una asignación vigente que no lo tiene |
 | POST | `/api/asignaciones/:id/liberar` | Liberar una parcela |
 | GET | `/api/parcelas/:id/transferencia/deuda?fecha=` | Lo que la parcela debe a esa fecha: las cuotas que quedan con el titular saliente |
 | POST | `/api/parcelas/:id/transferir` | `{ aSocioId, fecha?, motivo?, plan? }`. Cambia el titular y deja el registro. Con deuda, `plan` es obligatorio |

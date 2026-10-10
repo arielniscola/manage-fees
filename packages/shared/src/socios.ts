@@ -173,6 +173,8 @@ export interface AsignacionDeSocio {
   id: number;
   desde: string;
   hasta: string | null;
+  /** Vigente, de un loteo que cobra anticipo de entrada, y todavía sin el suyo. */
+  anticipoPendiente: boolean;
   parcela: ParcelaResumen & { sector: SectorResumen | null };
 }
 

@@ -6,10 +6,13 @@ import { Check, Search } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   aCentavos,
+  anticipoEntradaSchema,
   asignacionLiberarSchema,
   hoy,
   pesos,
   socioBajaSchema,
+  type AnticipoEntrada,
+  type AnticipoEntradaInput,
   type AsignacionDeSocio,
   type AsignacionLiberar,
   type AsignacionLiberarInput,
@@ -26,7 +29,7 @@ import { cn } from '@/lib/cn';
 import { fecha, nombreCompleto } from '@/lib/formato';
 import { useDebounce } from '@/lib/hooks';
 import { useLoteos, useParcelas } from '../parcelas/api';
-import { useAsignarParcela, useBajaSocio, useEliminarSocio, useLiberarParcela } from './api';
+import { useAsignarParcela, useBajaSocio, useCargarAnticipo, useEliminarSocio, useLiberarParcela } from './api';
 
 interface DialogoSocio {
   socio: SocioDetalle;
@@ -310,6 +313,83 @@ export function AsignarParcelaDialog({ socio, abierto, onAbiertoChange }: Dialog
           </div>
         )}
       </div>
+    </Dialog>
+  );
+}
+
+/** Para la asignación vigente que quedó sin anticipo: genera la cuota como si se hubiera pedido al asignar. */
+export function CargarAnticipoDialog({ asignacion, onCerrar }: { asignacion: AsignacionDeSocio | null; onCerrar: () => void }) {
+  const cargar = useCargarAnticipo();
+  const { data: loteos = [] } = useLoteos();
+  const sugerido = loteos.find((l) => l.id === asignacion?.parcela.sector?.loteo?.id)?.importeAnticipo;
+  const { register, handleSubmit, reset, setError, formState: { errors } } = useForm<AnticipoEntradaInput, unknown, AnticipoEntrada>({
+    resolver: zodResolver(anticipoEntradaSchema),
+    defaultValues: { importe: '', vencimiento: hoy() },
+  });
+
+  // Se precarga el importe sugerido del loteo.
+  useEffect(() => {
+    if (asignacion) reset({ importe: sugerido ? pesos(sugerido, { simbolo: false }) : '', vencimiento: hoy() });
+  }, [asignacion, sugerido, reset]);
+
+  const onSubmit = handleSubmit((datos) => {
+    if (!asignacion) return;
+    cargar.mutate(
+      { asignacionId: asignacion.id, ...datos },
+      {
+        onSuccess: () => {
+          toast.success(`Anticipo de ${pesos(datos.importe)} cargado a la parcela ${asignacion.parcela.etiqueta}`);
+          onCerrar();
+        },
+        onError: (e) => {
+          if (e instanceof ApiError && (e.field === 'importe' || e.field === 'vencimiento')) setError(e.field, { message: e.message });
+          else toast.error(e.message);
+        },
+      },
+    );
+  });
+
+  return (
+    <Dialog
+      abierto={!!asignacion}
+      onAbiertoChange={(v) => !v && onCerrar()}
+      titulo={`Cargar anticipo de la parcela ${asignacion?.parcela.etiqueta ?? ''}`}
+      ancho="sm"
+      descripcion="Se genera como una cuota más del socio, y se cobra por el mismo circuito."
+      pie={
+        <>
+          <Button variante="secundario" onClick={onCerrar}>Cancelar</Button>
+          <Button form="form-anticipo" type="submit" cargando={cargar.isPending}>Cargar anticipo</Button>
+        </>
+      }
+    >
+      <form id="form-anticipo" onSubmit={onSubmit} noValidate className="flex flex-col gap-4">
+        <Field label="Importe del anticipo" htmlFor="cargar-anticipo-importe" requerido error={errors.importe?.message}>
+          <Input
+            id="cargar-anticipo-importe"
+            inputMode="decimal"
+            className="tabular"
+            placeholder="0,00"
+            invalido={!!errors.importe}
+            {...register('importe')}
+          />
+        </Field>
+        <Field
+          label="Vencimiento"
+          htmlFor="cargar-anticipo-vencimiento"
+          requerido
+          error={errors.vencimiento?.message}
+          ayuda={asignacion ? `Asignada desde el ${fecha(asignacion.desde)}` : undefined}
+        >
+          <Input
+            id="cargar-anticipo-vencimiento"
+            type="date"
+            min={asignacion?.desde}
+            invalido={!!errors.vencimiento}
+            {...register('vencimiento')}
+          />
+        </Field>
+      </form>
     </Dialog>
   );
 }
