@@ -322,7 +322,7 @@ export function CargarAnticipoDialog({ asignacion, onCerrar }: { asignacion: Asi
   const cargar = useCargarAnticipo();
   const { data: loteos = [] } = useLoteos();
   const sugerido = loteos.find((l) => l.id === asignacion?.parcela.sector?.loteo?.id)?.importeAnticipo;
-  const { register, handleSubmit, reset, setError, formState: { errors } } = useForm<AnticipoEntradaInput, unknown, AnticipoEntrada>({
+  const { register, handleSubmit, reset, setError, getValues, formState: { errors } } = useForm<AnticipoEntradaInput, unknown, AnticipoEntrada>({
     resolver: zodResolver(anticipoEntradaSchema),
     defaultValues: { importe: '', vencimiento: hoy() },
   });
@@ -332,10 +332,12 @@ export function CargarAnticipoDialog({ asignacion, onCerrar }: { asignacion: Asi
     if (asignacion) reset({ importe: sugerido ? pesos(sugerido, { simbolo: false }) : '', vencimiento: hoy() });
   }, [asignacion, sugerido, reset]);
 
+  // Se manda lo que está escrito, no lo que devuelve el resolver: el importe que sale de zod
+  // ya está en centavos y el servidor lo vuelve a convertir (100 quedaría en 10.000).
   const onSubmit = handleSubmit((datos) => {
     if (!asignacion) return;
     cargar.mutate(
-      { asignacionId: asignacion.id, ...datos },
+      { asignacionId: asignacion.id, ...getValues() },
       {
         onSuccess: () => {
           toast.success(`Anticipo de ${pesos(datos.importe)} cargado a la parcela ${asignacion.parcela.etiqueta}`);
