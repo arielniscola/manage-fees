@@ -200,7 +200,7 @@ export function CargarHistorialDialog({
               <input type="radio" value="false" className="mt-0.5 size-4 accent-pino-600" {...register('pagada')} />
               <span className="flex flex-col gap-0.5">
                 <span className="text-sm font-medium">Adeudadas</span>
-                <span className="text-[13px] text-tenue">Suman a su deuda y acumulan mora.</span>
+                <span className="text-[13px] text-tenue">Suman a su deuda; al cobrarlas se les puede sumar mora.</span>
               </span>
             </label>
           </div>

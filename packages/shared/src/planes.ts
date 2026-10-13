@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { fechaSchema, hoy, paginacionSchema, textoOpcional } from './common';
 import { importeOpcionalSchema, repartir } from './dinero';
+import { morasSchema } from './interes';
 import { mesDe, sumarMeses, vencimientoDe } from './periodos';
 import type { EstadoCuotaVisible } from './cuotas';
 import type { SocioResumen } from './parcelas';
@@ -97,6 +98,8 @@ export const planCrearSchema = z
       .array(z.coerce.number().int().positive())
       .min(1, 'Elegí al menos una cuota para refinanciar')
       .max(200, 'Son demasiadas cuotas para un solo plan'),
+    /** Interés por mora que se suma a la deuda de las cuotas vencidas, si se decide incluirlo. */
+    moras: morasSchema,
     cantidadCuotas: z.coerce
       .number({ invalid_type_error: 'Indicá en cuántas cuotas' })
       .int('Indicá un número entero de cuotas')

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { etiquetaParcela, hoy, interesDeCuota } from '@mf/shared';
+import { etiquetaParcela, hoy } from '@mf/shared';
 import type {
   EstadoCuenta,
   Paginado,
@@ -13,7 +13,6 @@ import { Prisma } from '@prisma/client';
 import { conflicto, noEncontrado } from '../common/errores';
 import { aFecha, deFecha, deFechaNullable } from '../common/fechas';
 import { aParcelaUbicada, parcelaResumen, sectorResumen } from '../common/parcela';
-import { InteresService } from '../configuracion/interes.service';
 import { esDuplicado, PrismaService } from '../prisma/prisma.module';
 
 const socioResumen = { select: { id: true, numero: true, nombre: true, apellido: true } } as const;
@@ -28,10 +27,7 @@ type ParcelaConTitular = Prisma.ParcelaGetPayload<{ include: typeof conTitular }
 
 @Injectable()
 export class ParcelasService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly interes: InteresService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async listar({ q, estado, sectorId, loteoId, page, pageSize }: ParcelaListar): Promise<Paginado<ParcelaListItem>> {
     const where: Prisma.ParcelaWhereInput = {
@@ -116,18 +112,15 @@ export class ParcelasService {
   }
 
   /**
-   * Deuda y cobros de una parcela. La deuda es la de sus cuotas, con el interés por mora
-   * del día; lo cobrado sale de los renglones de cobro, que ya guardan el interés que se
-   * cobró en su momento.
+   * Deuda y cobros de una parcela. La deuda es la de sus cuotas, sin mora; lo cobrado sale
+   * de los renglones de cobro, que sí incluyen la mora que se haya cobrado.
    */
   private async estadoDeCuenta(parcelaId: number): Promise<{ estadoCuenta: EstadoCuenta; cobrado: number }> {
-    const hoyISO = hoy();
-    const corte = aFecha(hoyISO);
-    const [config, pendientes, cobros] = await Promise.all([
-      this.interes.vigente(),
+    const corte = aFecha(hoy());
+    const [pendientes, cobros] = await Promise.all([
       this.prisma.cuota.findMany({
         where: { parcelaId, estado: 'PENDIENTE' },
-        select: { importe: true, vencimiento: true, estado: true, origen: true },
+        select: { importe: true, vencimiento: true },
       }),
       this.prisma.cobroDetalle.aggregate({
         where: { cuota: { parcelaId }, cobro: { anuladoEn: null } },
@@ -135,15 +128,13 @@ export class ParcelasService {
       }),
     ]);
 
-    const estadoCuenta: EstadoCuenta = { pendientes: 0, vencidas: 0, deuda: 0, deudaVencida: 0, interes: 0 };
+    const estadoCuenta: EstadoCuenta = { pendientes: 0, vencidas: 0, deuda: 0, deudaVencida: 0 };
     for (const c of pendientes) {
-      const recargo = interesDeCuota({ ...c, vencimiento: deFecha(c.vencimiento) }, config, hoyISO);
       estadoCuenta.pendientes += 1;
-      estadoCuenta.deuda += c.importe + recargo;
-      estadoCuenta.interes += recargo;
+      estadoCuenta.deuda += c.importe;
       if (c.vencimiento < corte) {
         estadoCuenta.vencidas += 1;
-        estadoCuenta.deudaVencida += c.importe + recargo;
+        estadoCuenta.deudaVencida += c.importe;
       }
     }
     return { estadoCuenta, cobrado: cobros._sum.importe ?? 0 };

@@ -55,14 +55,12 @@ export function ConfiguracionPage() {
             a="/configuracion/interes"
             icono={Percent}
             titulo="Interés por mora"
-            descripcion="El recargo que acumulan las cuotas impagas y el día del mes en que se aplica."
+            descripcion="El porcentaje que se propone sumar al cobrar una cuota vencida."
             estado={
               interes.data
                 ? interes.data.activo
-                  ? interes.data.modo === 'UNICO'
-                    ? `${interes.data.porcentaje} % una sola vez, el día ${interes.data.diaAplicacion}`
-                    : `${interes.data.porcentaje} % el día ${interes.data.diaAplicacion} de cada mes`
-                  : 'Apagado: las cuotas vencidas no acumulan recargo'
+                  ? `${interes.data.porcentaje} % sobre la cuota vencida, opcional al cobrar`
+                  : 'Apagado: no se propone mora al cobrar'
                 : undefined
             }
           />

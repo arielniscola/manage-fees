@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { hoy, interesDeCuota } from '@mf/shared';
+import { hoy } from '@mf/shared';
 import type {
   EstadoCuenta,
   Paginado,
@@ -15,7 +15,6 @@ import { conflicto, noEncontrado, reglaIncumplida } from '../common/errores';
 import { aFecha, deFecha, deFechaNullable, fechaLegible } from '../common/fechas';
 import { cuotasDelLoteo, sociosDelLoteo } from '../common/loteo';
 import { aParcelaUbicada, parcelaResumen } from '../common/parcela';
-import { InteresService } from '../configuracion/interes.service';
 import { esDuplicado, PrismaService } from '../prisma/prisma.module';
 
 const conParcelasVigentes = {
@@ -30,14 +29,11 @@ type SocioConParcelas = Socio & { asignaciones: Prisma.AsignacionGetPayload<{ se
 
 const plural = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno : varios}`;
 
-const SIN_DEUDA: EstadoCuenta = { pendientes: 0, vencidas: 0, deuda: 0, deudaVencida: 0, interes: 0 };
+const SIN_DEUDA: EstadoCuenta = { pendientes: 0, vencidas: 0, deuda: 0, deudaVencida: 0 };
 
 @Injectable()
 export class SociosService {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly interes: InteresService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async listar(filtros: SocioListar): Promise<Paginado<SocioListItem>> {
     if (filtros.estado === 'moroso') return this.listarPorDeuda(filtros, { soloVencidas: true });
@@ -90,30 +86,22 @@ export class SociosService {
     const candidatos = await this.prisma.socio.findMany({ where, select: { id: true } });
     if (candidatos.length === 0) return { items: [], total: 0, page, pageSize };
 
-    // La deuda se suma fila por fila y no con un groupBy porque el interés por mora se
-    // calcula al vuelo: ordenar por el importe pelado dejaría el ranking desfasado.
-    const hoyISO = hoy();
-    const [config, vencidas] = await Promise.all([
-      this.interes.vigente(),
-      this.prisma.cuota.findMany({
+    const deudas = (
+      await this.prisma.cuota.groupBy({
+        by: ['socioId'],
         where: {
           socioId: { in: candidatos.map((s) => s.id) },
           estado: 'PENDIENTE',
           // Las cuotas de un plan no se vuelven a refinanciar: no cuentan para armar otro.
-          ...(soloVencidas ? { vencimiento: { lt: aFecha(hoyISO) } } : { origen: { not: 'PLAN' as const } }),
+          ...(soloVencidas ? { vencimiento: { lt: aFecha(hoy()) } } : { origen: { not: 'PLAN' as const } }),
           // Con un loteo activo, moroso es quien debe en ese loteo, no en otro.
           ...cuotasDelLoteo(loteoId),
         },
-        select: { socioId: true, importe: true, vencimiento: true, estado: true, origen: true },
-      }),
-    ]);
-
-    const porSocio = new Map<number, number>();
-    for (const c of vencidas) {
-      const conInteres = c.importe + interesDeCuota({ ...c, vencimiento: deFecha(c.vencimiento) }, config, hoyISO);
-      porSocio.set(c.socioId, (porSocio.get(c.socioId) ?? 0) + conInteres);
-    }
-    const deudas = [...porSocio.entries()].sort((a, b) => b[1] - a[1]);
+        _sum: { importe: true },
+      })
+    )
+      .map((d) => [d.socioId, d._sum.importe ?? 0] as const)
+      .sort((a, b) => b[1] - a[1]);
 
     const pagina = deudas.slice((page - 1) * pageSize, page * pageSize).map(([socioId]) => socioId);
     const socios = await this.prisma.socio.findMany({
@@ -331,26 +319,19 @@ export class SociosService {
     const cuentas = new Map<number, EstadoCuenta>();
     if (socioIds.length === 0) return cuentas;
 
-    const hoyISO = hoy();
-    const vencidasHasta = aFecha(hoyISO);
-    const [config, pendientes] = await Promise.all([
-      this.interes.vigente(),
-      this.prisma.cuota.findMany({
-        where: { socioId: { in: socioIds }, estado: 'PENDIENTE', ...cuotasDelLoteo(loteoId) },
-        select: { socioId: true, importe: true, vencimiento: true, estado: true, origen: true },
-      }),
-    ]);
+    const vencidasHasta = aFecha(hoy());
+    const pendientes = await this.prisma.cuota.findMany({
+      where: { socioId: { in: socioIds }, estado: 'PENDIENTE', ...cuotasDelLoteo(loteoId) },
+      select: { socioId: true, importe: true, vencimiento: true },
+    });
 
     for (const c of pendientes) {
       const cuenta = cuentas.get(c.socioId) ?? { ...SIN_DEUDA };
-      // El interés por mora no es una cuota aparte: engrosa la que sigue impaga.
-      const recargo = interesDeCuota({ ...c, vencimiento: deFecha(c.vencimiento) }, config, hoyISO);
       cuenta.pendientes += 1;
-      cuenta.deuda += c.importe + recargo;
-      cuenta.interes += recargo;
+      cuenta.deuda += c.importe;
       if (c.vencimiento < vencidasHasta) {
         cuenta.vencidas += 1;
-        cuenta.deudaVencida += c.importe + recargo;
+        cuenta.deudaVencida += c.importe;
       }
       cuentas.set(c.socioId, cuenta);
     }

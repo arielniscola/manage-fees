@@ -348,7 +348,10 @@ model CobroDetalle {
   cuota   Cuota @relation(fields: [cuotaId], references: [id])
   cuotaId Int
   /// Centavos imputados a la cuota. Hoy siempre su total: no se aceptan pagos parciales.
+  /// Incluye la mora, si se cobró.
   importe Int
+  /// Cuánto de ese importe es interés por mora. 0 si no se cobró.
+  mora    Int   @default(0)
 
   @@unique([cobroId, cuotaId])
   @@index([cuotaId])
@@ -447,25 +450,15 @@ model ConfiguracionAvisos {
   updatedAt      DateTime @updatedAt
 }
 
-/// Única fila (id = 1) con el interés por mora que se le carga a las cuotas impagas.
-/// No genera cuotas: el recargo se calcula al vuelo cada vez que se muestra la deuda y
-/// recién queda congelado en el detalle del cobro cuando el socio paga.
-/// `MENSUAL` suma el porcentaje cada mes que la cuota sigue impaga; `UNICO` lo aplica una
-/// sola vez, el primer día de aplicación después del vencimiento.
-enum ModoInteres {
-  MENSUAL
-  UNICO
-}
-
+/// Única fila (id = 1) con el interés por mora. No se genera solo ni engrosa la deuda:
+/// es el porcentaje que se propone sumar al cobrar o refinanciar una cuota vencida, y
+/// quien cobra decide si lo deja, lo cambia o lo quita.
 model ConfiguracionInteres {
-  id            Int      @id @default(1)
-  activo        Boolean  @default(false)
-  modo          ModoInteres @default(MENSUAL)
-  /// Día del mes en que se aplica el recargo. Se recorta al último día del mes.
-  diaAplicacion Int      @default(10)
+  id         Int      @id @default(1)
+  activo     Boolean  @default(false)
   /// Porcentaje sobre el importe original de la cuota, con hasta dos decimales.
-  porcentaje    Decimal  @default(0) @db.Decimal(5, 2)
-  updatedAt     DateTime @updatedAt
+  porcentaje Decimal  @default(0) @db.Decimal(5, 2)
+  updatedAt  DateTime @updatedAt
 }
 
 /// Única fila (id = 1) con las reglas para adelantar cuotas al registrar un pago.

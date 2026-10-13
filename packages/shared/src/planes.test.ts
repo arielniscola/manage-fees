@@ -73,7 +73,8 @@ describe('simularPlan', () => {
 });
 
 describe('planCrearSchema', () => {
-  const base = { socioId: 1, cuotaIds: [1, 2], cantidadCuotas: 4, primerVencimiento: '2026-10-10' };
+  // Con fecha fija: si se toma la de hoy, el primer vencimiento queda en el pasado.
+  const base = { socioId: 1, fecha: '2026-10-01', cuotaIds: [1, 2], cantidadCuotas: 4, primerVencimiento: '2026-10-10' };
 
   it('el anticipo vacío vale cero', () => {
     expect(planCrearSchema.parse(base).anticipo).toBe(0);

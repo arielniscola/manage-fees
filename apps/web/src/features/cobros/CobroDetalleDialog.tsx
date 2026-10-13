@@ -106,7 +106,10 @@ export function CobroDetalleDialog({ cobroId, onCerrar }: { cobroId: number | nu
                       </Td>
                       <Td className="font-semibold tabular">{c.parcela?.etiqueta ?? <span className="font-normal text-tenue">Plan de pago</span>}</Td>
                       <Td className="tabular text-tenue">{fecha(c.vencimiento)}</Td>
-                      <Td className="text-right tabular">{pesos(c.importe)}</Td>
+                      <Td className="text-right tabular">
+                        {pesos(c.importe)}
+                        {c.mora > 0 && <span className="block text-xs text-tenue">incluye {pesos(c.mora)} de interés por mora</span>}
+                      </Td>
                     </tr>
                   ))}
                   <tr className="bg-superficie-2 font-semibold">

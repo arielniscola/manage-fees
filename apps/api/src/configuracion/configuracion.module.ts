@@ -4,7 +4,7 @@ import { ConfiguracionController } from './configuracion.controller';
 import { InteresService } from './interes.service';
 
 /**
- * Global: el interés por mora lo consultan cuotas, socios, cobros, planes y reportes,
+ * Global: el interés por mora lo consultan cuotas, cobros y planes,
  * y las reglas del adelanto las necesitan cuotas y cobros; no tiene sentido que cada
  * módulo las importe por separado.
  */

@@ -18,6 +18,7 @@ import { Dialog } from '@/components/ui/dialog';
 import { Field, Input, Textarea } from '@/components/ui/field';
 import { useCuotasDeSocio } from '@/features/cuotas/api';
 import { BadgeCuota } from '@/features/cuotas/estados';
+import { admiteMora, conMora, morasPorDefecto, RenglonMora, resumirMoras, type Moras } from '@/features/cuotas/mora';
 import { useSocios } from '@/features/socios/api';
 import { useLoteoActivo } from '@/layout/loteo-activo';
 import { ApiError } from '@/lib/api';
@@ -189,6 +190,9 @@ function FormularioDePlan({
   onCreado: (p: PlanDetalle) => void;
 }) {
   const [seleccion, setSeleccion] = useState<number[]>([]);
+  // Interés por mora de las cuotas elegidas: las vencidas lo traen propuesto y se puede
+  // cambiar o quitar.
+  const [moras, setMoras] = useState<Moras>({});
   const [cantidadCuotas, setCantidadCuotas] = useState('6');
   const [anticipo, setAnticipo] = useState('');
   const [fechaPlan, setFechaPlan] = useState(hoy);
@@ -211,6 +215,7 @@ function FormularioDePlan({
 
   useEffect(() => {
     setSeleccion([]);
+    setMoras({});
     setCantidadCuotas('6');
     setAnticipo('');
     setFechaPlan(hoy());
@@ -220,9 +225,9 @@ function FormularioDePlan({
   }, [socio.id]);
 
   const elegidas = refinanciables.filter((c) => seleccion.includes(c.id));
-  // Se refinancia la deuda del día: cada cuota entra con su interés por mora incluido,
-  // que es lo que el servidor vuelve a calcular al crear el plan.
-  const deudaTotal = elegidas.reduce((t, c) => t + c.importe + c.interes, 0);
+  // Se refinancia el importe de cada cuota más la mora que se haya dejado en ella.
+  const mora = resumirMoras(moras, seleccion);
+  const deudaTotal = elegidas.reduce((t, c) => t + c.importe, 0) + mora.total;
   const anticipoCentavos = Math.max(0, aCentavos(anticipo) ?? 0);
   const cuotas = Math.max(0, Number(cantidadCuotas) || 0);
 
@@ -233,7 +238,17 @@ function FormularioDePlan({
 
   const anticipoExcesivo = deudaTotal > 0 && anticipoCentavos >= deudaTotal;
 
-  const alternar = (id: number) => setSeleccion((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+  const alternar = (cuota: CuotaListItem) => {
+    const marcar = !seleccion.includes(cuota.id);
+    setSeleccion((s) => (marcar ? [...s, cuota.id] : s.filter((x) => x !== cuota.id)));
+    setMoras((m) => conMora(m, cuota, marcar));
+  };
+  const alternarTodas = () => {
+    const marcar = seleccion.length !== refinanciables.length;
+    setSeleccion(marcar ? refinanciables.map((c) => c.id) : []);
+    // Las que ya estaban tildadas conservan lo que se les haya corregido o quitado.
+    setMoras((m) => (marcar ? { ...morasPorDefecto(refinanciables.filter((c) => !seleccion.includes(c.id))), ...m } : {}));
+  };
 
   const enviar = () =>
     crear.mutate(
@@ -241,6 +256,7 @@ function FormularioDePlan({
         socioId: socio.id,
         fecha: fechaPlan,
         cuotaIds: seleccion,
+        moras: mora.lista,
         cantidadCuotas: cuotas,
         anticipo: anticipo || 0,
         primerVencimiento,
@@ -280,7 +296,8 @@ function FormularioDePlan({
           <span className="text-sm text-tenue">
             {simulacion ? (
               <>
-                {plural(seleccion.length, 'cuota')} ·{' '}
+                {plural(seleccion.length, 'cuota')}
+                {mora.total > 0 && <> · {pesos(mora.total)} de interés por mora</>} ·{' '}
                 <span className="font-serif text-xl font-medium tabular text-tinta">{pesos(deudaTotal)}</span>
               </>
             ) : (
@@ -291,7 +308,7 @@ function FormularioDePlan({
             <Button variante="secundario" onClick={() => onAbiertoChange(false)}>
               Cancelar
             </Button>
-            <Button cargando={crear.isPending} disabled={!simulacion} onClick={enviar}>
+            <Button cargando={crear.isPending} disabled={!simulacion || mora.invalida} onClick={enviar}>
               Firmar el plan
             </Button>
           </div>
@@ -315,9 +332,7 @@ function FormularioDePlan({
                   <input
                     type="checkbox"
                     checked={seleccion.length === refinanciables.length}
-                    onChange={() =>
-                      setSeleccion(seleccion.length === refinanciables.length ? [] : refinanciables.map((c) => c.id))
-                    }
+                    onChange={alternarTodas}
                     className="size-4 accent-pino-600"
                   />
                   {seleccion.length === refinanciables.length ? 'Quitar todas' : `Refinanciar las ${refinanciables.length}`}
@@ -326,7 +341,14 @@ function FormularioDePlan({
               </div>
               <div className="max-h-[220px] overflow-y-auto">
                 {refinanciables.map((c) => (
-                  <FilaCuota key={c.id} cuota={c} marcada={seleccion.includes(c.id)} onAlternar={() => alternar(c.id)} />
+                  <FilaCuota
+                    key={c.id}
+                    cuota={c}
+                    marcada={seleccion.includes(c.id)}
+                    onAlternar={() => alternar(c)}
+                    moras={moras}
+                    onMoras={setMoras}
+                  />
                 ))}
               </div>
             </div>
@@ -409,25 +431,40 @@ function FormularioDePlan({
   );
 }
 
-function FilaCuota({ cuota, marcada, onAlternar }: { cuota: CuotaListItem; marcada: boolean; onAlternar: () => void }) {
+function FilaCuota({
+  cuota,
+  marcada,
+  onAlternar,
+  moras,
+  onMoras,
+}: {
+  cuota: CuotaListItem;
+  marcada: boolean;
+  onAlternar: () => void;
+  moras: Moras;
+  onMoras: (moras: Moras) => void;
+}) {
   return (
-    <label
-      className={`flex cursor-pointer items-center gap-3 border-b border-borde px-4 py-2.5 text-sm last:border-b-0 ${marcada ? 'bg-pino-50' : 'hover:bg-superficie-2'}`}
-    >
-      <input type="checkbox" checked={marcada} onChange={onAlternar} className="size-4 accent-pino-600" />
-      <span className="w-[140px] shrink-0 truncate font-semibold tabular">
-        {cuota.parcela?.etiqueta ?? (cuota.origen === 'SOCIO' ? <span className="font-normal text-tenue">Social</span> : '—')}
-      </span>
-      <span className="min-w-0 flex-1 truncate first-letter:uppercase">{cuota.etiqueta}</span>
-      <span className="w-[92px] shrink-0 tabular text-tenue">{fecha(cuota.vencimiento)}</span>
-      <span className="w-[70px] shrink-0">
-        <BadgeCuota estado={cuota.estado} />
-      </span>
-      <span className="flex w-[110px] shrink-0 flex-col items-end tabular">
-        <span>{pesos(cuota.importe + cuota.interes)}</span>
-        {cuota.interes > 0 && <span className="text-xs text-tenue">incluye {pesos(cuota.interes)} de interés</span>}
-      </span>
-    </label>
+    <div className={`border-b border-borde last:border-b-0 ${marcada ? 'bg-pino-50' : 'hover:bg-superficie-2'}`}>
+      <label className="flex cursor-pointer items-center gap-3 px-4 py-2.5 text-sm">
+        <input type="checkbox" checked={marcada} onChange={onAlternar} className="size-4 accent-pino-600" />
+        <span className="w-[140px] shrink-0 truncate font-semibold tabular">
+          {cuota.parcela?.etiqueta ?? (cuota.origen === 'SOCIO' ? <span className="font-normal text-tenue">Social</span> : '—')}
+        </span>
+        <span className="min-w-0 flex-1 truncate first-letter:uppercase">{cuota.etiqueta}</span>
+        <span className="w-[92px] shrink-0 tabular text-tenue">{fecha(cuota.vencimiento)}</span>
+        <span className="w-[70px] shrink-0">
+          <BadgeCuota estado={cuota.estado} />
+        </span>
+        <span className="w-[110px] shrink-0 text-right tabular">{pesos(cuota.importe)}</span>
+      </label>
+      {/* La mora es un concepto aparte de la cuota: solo se ofrece en las vencidas que se refinancian. */}
+      {marcada && admiteMora(cuota) && (
+        <div className="pb-2.5 pl-[44px] pr-4">
+          <RenglonMora cuota={cuota} moras={moras} onCambiar={onMoras} />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -480,8 +517,8 @@ function Simulacion({
       </div>
 
       <p className="text-[13px] text-tenue">
-        Las cuotas elegidas quedan refinanciadas y estas las reemplazan. Sin interés: el total del plan es el mismo{' '}
-        <span className="font-semibold text-tinta">{pesos(simulacion.deudaTotal)}</span> de la deuda.
+        Las cuotas elegidas quedan refinanciadas y estas las reemplazan. Sin interés de financiación: el total del plan es el
+        mismo <span className="font-semibold text-tinta">{pesos(simulacion.deudaTotal)}</span> que se refinancia.
       </p>
     </div>
   );

@@ -110,7 +110,7 @@ Si cambiás algo en `packages/shared`, volvé a correr `npm run build:shared`
 | --- | --- | --- |
 | GET | `/api/cobros?q=&estado=vigentes\|anulados\|todos&socioId=&parcelaId=&desde=&hasta=&medio=` | Listado paginado, con el total cobrado del filtro. `parcelaId` trae los cobros que cancelaron alguna cuota de esa parcela |
 | GET | `/api/cobros/:id` | Detalle con las cuotas que canceló |
-| POST | `/api/cobros` | `{ socioId, fecha?, medio, cuotaIds[], observaciones? }`. Emite el recibo |
+| POST | `/api/cobros` | `{ socioId, fecha?, medio, cuotaIds[], moras?: [{ cuotaId, importe }], observaciones? }`. Emite el recibo; `moras` es el interés por mora, en centavos, que se suma a cuotas vencidas de `cuotaIds` |
 | POST | `/api/cobros/:id/anular` | `{ motivo }` |
 | GET | `/api/cobros/:id/recibo.pdf[?descargar=1]` | El recibo en PDF, para ver o descargar |
 | GET | `/api/socios/:id/cobros` | Historial de pagos del socio |
@@ -145,7 +145,7 @@ Si cambiás algo en `packages/shared`, volvé a correr `npm run build:shared`
 | --- | --- | --- |
 | GET | `/api/panel?desde=&hasta=&meses=` | Resumen, evolución mensual y mayores deudas |
 | GET | `/api/reportes/:tipo?formato=xlsx\|csv&desde=&hasta=` | Descarga de `socios`, `cobros`, `morosos` o `planes` |
-| GET · PUT | `/api/configuracion/interes` | Interés por mora: si está activo, el día del mes y el porcentaje |
+| GET · PUT | `/api/configuracion/interes` | Interés por mora: si está activo y el porcentaje que se propone al cobrar |
 
 Los errores tienen siempre la forma `{ statusCode, message, field? }`.
 
@@ -174,7 +174,7 @@ Los errores tienen siempre la forma `{ statusCode, message, field? }`.
 ### Ficha de la parcela
 
 - **La parcela tiene su propia ficha**, la contracara de la del socio: quién la tiene hoy, por qué manos pasó, qué debe y qué se le cobró. Se entra desde el código en el listado.
-- **La deuda que muestra es la de la parcela, no la del titular:** un socio con tres parcelas debe por cada una, y en la ficha de cada una se ve solo lo suyo, con el interés por mora del día.
+- **La deuda que muestra es la de la parcela, no la del titular:** un socio con tres parcelas debe por cada una, y en la ficha de cada una se ve solo lo suyo.
 - **Lo cobrado es histórico y no se reparte:** son los renglones de cobro de sus cuotas, sin contar los cobros anulados. Un mismo recibo puede pagar cuotas de varias parcelas, así que el total del recibo que se lista puede ser mayor que lo que le tocó a esta.
 
 ### Transferencias de posesión
@@ -204,11 +204,12 @@ Los errores tienen siempre la forma `{ statusCode, message, field? }`.
 
 ### Interés por mora
 
-- **El interés no genera una cuota aparte:** se calcula al vuelo sobre cada cuota impaga cada vez que se muestra la deuda, y recién queda congelado cuando el socio paga —el detalle del cobro y el recibo guardan el importe con el recargo incluido, y el recibo aclara cuánto de eso fue interés.
-- **Es simple, no compuesto, y se aplica por cuota:** cada vez que llega el día configurado y la cuota sigue impaga, se le suma el porcentaje calculado sobre su importe original. Tres meses de mora al 5 % son 15 %, no 15,76 %.
-- El día de aplicación se recorta al último día del mes en los meses más cortos, igual que el día de vencimiento de la tarifa.
-- **Las cuotas de un plan de pago no devengan interés:** esa deuda ya se refinanció una vez y el plan tiene sus propias reglas de incumplimiento. Al firmar un plan, en cambio, cada cuota entra con el interés que tenía ese día: refinanciar congela la deuda del momento.
-- Apagar el interés no borra nada, porque no hay nada guardado: la deuda vuelve a mostrarse por el importe de las cuotas.
+- **La mora no se genera sola:** es un concepto más a la hora de cobrar. La deuda que muestran las fichas, los listados, el panel y los reportes es siempre el importe de las cuotas, sin mora.
+- **Se propone en las cuotas vencidas y es opcional:** al registrar un pago, armar un plan o transferir una parcela con deuda, cada cuota de parcela vencida —desde el día siguiente a su vencimiento— trae el interés ya agregado. Quien cobra puede cambiarle el importe o quitarlo, y volver a agregarlo.
+- **El importe propuesto es el porcentaje configurado sobre el importe de la cuota, una sola vez,** por más tiempo que lleve vencida.
+- **Queda como renglón aparte:** el recibo lleva una línea «Interés por mora» por cada cuota a la que se le cobró, y el detalle del cobro guarda cuánto de lo cobrado fue mora.
+- **Solo las cuotas de parcela llevan mora:** ni la cuota social, ni el anticipo de entrada, ni las cuotas de un plan de pago. Al firmar un plan, la mora que se deje en cada cuota vencida entra en la deuda refinanciada.
+- Con el interés apagado no se propone ni se puede sumar mora.
 
 ### Cuota social
 

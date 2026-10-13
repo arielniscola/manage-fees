@@ -4,7 +4,6 @@ import {
   conceptoCuota,
   estadoVisible,
   hoy,
-  interesDeCuota,
   mesDe,
   simularPlan,
   type EstadoPlan,
@@ -107,10 +106,7 @@ export class PlanesService {
    */
   async crearEn(tx: Prisma.TransactionClient, usuario: UsuarioSesion, datos: PlanCrear): Promise<number> {
     const cuotaIds = [...new Set(datos.cuotaIds)];
-    // Refinanciar congela la deuda del día: cada cuota entra con el interés por mora que
-    // tenía al firmarse. Las cuotas del plan que nace ya no vuelven a devengar interés.
     const hoyISO = hoy();
-    const config = await this.interes.vigente();
 
     {
       const socio = await tx.socio.findUnique({ where: { id: datos.socioId } });
@@ -141,8 +137,10 @@ export class PlanesService {
         throw conflicto(`La cuota de la parcela ${cual} ${como}`, 'cuotaIds');
       }
 
-      const recargo = new Map(cuotas.map((c) => [c.id, interesDeCuota({ ...c, vencimiento: deFecha(c.vencimiento) }, config, hoyISO)]));
-      const refinanciado = (c: { id: number; importe: number }) => c.importe + (recargo.get(c.id) ?? 0);
+      // Cada cuota vencida entra con la mora que se decidió sumarle al firmar, si alguna.
+      // Las cuotas del plan que nace ya no llevan mora.
+      const mora = await this.interes.moras(cuotas, datos.moras, hoyISO);
+      const refinanciado = (c: { id: number; importe: number }) => c.importe + (mora.get(c.id) ?? 0);
       const deudaTotal = cuotas.reduce((t, c) => t + refinanciado(c), 0);
       if (datos.anticipo > deudaTotal) {
         throw reglaIncumplida('El anticipo no puede ser mayor que la deuda que se refinancia', 'anticipo');

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { fechaSchema, hoy, paginacionSchema, textoOpcional } from './common';
 import { aCentavos, importeOpcionalSchema, importeSchema } from './dinero';
+import { morasSchema } from './interes';
 import { TOLERANCIA_VENCIDAS } from './planes';
 import type { CuotaListItem, EstadoCuenta } from './cuotas';
 import { mesDe, sumarMeses } from './periodos';
@@ -232,8 +233,8 @@ export interface ParcelaDetalle extends ParcelaListItem {
   asignaciones: AsignacionDeParcela[];
   transferencias: Transferencia[];
   /**
-   * Deuda de las cuotas de esta parcela, con su interés por mora. Es la deuda de la
-   * parcela, no la del titular: un socio con tres parcelas debe por cada una.
+   * Deuda de las cuotas de esta parcela. Es la deuda de la parcela, no la del titular:
+   * un socio con tres parcelas debe por cada una.
    */
   estadoCuenta: EstadoCuenta;
   /** Total cobrado histórico por cuotas de esta parcela, sin contar los cobros anulados. */
@@ -248,7 +249,7 @@ export interface ParcelaDetalle extends ParcelaListItem {
 export interface DeudaDeTransferencia {
   socio: SocioResumen;
   cuotas: CuotaListItem[];
-  /** Centavos, con el interés por mora del día. */
+  /** Centavos, sin mora: la que se decida sumar va aparte, al armar el plan. */
   total: number;
   /** Cuántas de esas cuotas ya están vencidas. */
   vencidas: number;
@@ -286,6 +287,8 @@ export const planDeTransferenciaSchema = z.object({
     .min(1, 'El plan tiene que tener al menos una cuota')
     .max(60, 'Máximo 60 cuotas'),
   anticipo: importeOpcionalSchema,
+  /** Interés por mora que se suma a las cuotas vencidas de esa deuda, si se decide incluirlo. */
+  moras: morasSchema,
   primerVencimiento: fechaSchema,
   toleranciaVencidas: z.coerce.number().int().min(1, 'Tiene que ser al menos 1').max(12, 'Máximo 12').default(TOLERANCIA_VENCIDAS),
   observaciones: textoOpcional(300),

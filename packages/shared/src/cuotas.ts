@@ -172,11 +172,11 @@ export interface CuotaListItem {
   /** Días transcurridos desde el vencimiento; 0 si todavía no venció. */
   diasVencida: number;
   /**
-   * Interés por mora acumulado hasta hoy, en centavos. Se calcula al vuelo con la
-   * configuración vigente, así que crece solo mientras la cuota siga impaga. 0 si el
-   * interés está apagado o la cuota no devenga.
+   * Mora que se propone sumar al cobrarla o refinanciarla, en centavos. No es deuda: es
+   * una sugerencia que quien cobra puede cambiar o quitar. 0 si la cuota no está vencida,
+   * no admite mora o el interés está apagado.
    */
-  interes: number;
+  mora: number;
   socio: SocioResumen;
   /** Las cuotas de un plan de pago no cuelgan de ninguna parcela. */
   parcela: (ParcelaResumen & { sector: SectorResumen | null }) | null;
@@ -218,12 +218,10 @@ export interface EstadoCuenta {
   /** Cuotas sin pagar, incluidas las vencidas. */
   pendientes: number;
   vencidas: number;
-  /** Total adeudado en centavos, interés por mora incluido, esté vencido o no. */
+  /** Total adeudado en centavos, esté vencido o no. Sin mora: esa se decide al cobrar. */
   deuda: number;
-  /** La parte de la deuda que ya venció, también con su interés. */
+  /** La parte de la deuda que ya venció. */
   deudaVencida: number;
-  /** Cuánto de esa deuda es interés por mora. Va aparte para poder mostrarlo. */
-  interes: number;
 }
 
 // ---------------------------------------------------------------- Generación

@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import {
   conceptoCuota,
   hoy,
-  interesDeCuota,
   type CobroAnular,
   type CobroCrear,
   type CobroDetalle,
@@ -117,10 +116,7 @@ export class CobrosService {
    */
   async registrar(usuario: UsuarioSesion, datos: CobroCrear): Promise<CobroDetalle> {
     const elegidas = [...new Set(datos.cuotaIds)];
-    // El interés se calcula al vuelo, así que se congela acá: lo que se cobra hoy es lo
-    // que queda escrito en el detalle y en el recibo, aunque mañana el recargo sea otro.
     const hoyISO = hoy();
-    const config = await this.interes.vigente();
 
     const id = await this.prisma.$transaction(async (tx) => {
       const socio = await tx.socio.findUnique({ where: { id: datos.socioId } });
@@ -161,6 +157,10 @@ export class CobrosService {
         throw conflicto(`La cuota ${concepto(impagable)} ${como}`, 'cuotaIds');
       }
 
+      // La mora no se calcula sola: es la que quien cobra decidió sumar a cada cuota
+      // vencida, y queda escrita en el detalle y en el recibo.
+      const mora = await this.interes.moras(cuotas, datos.moras, hoyISO);
+
       // Solo marca las que siguen pendientes: si otra pantalla las cobró recién, el
       // conteo no coincide y la transacción entera vuelve atrás.
       const { count } = await tx.cuota.updateMany({
@@ -171,12 +171,11 @@ export class CobrosService {
         throw conflicto('Alguna de las cuotas se cobró desde otra pantalla. Revisá el detalle y volvé a intentarlo.');
       }
 
-      const recargo = new Map(cuotas.map((c) => [c.id, interesDeCuota({ ...c, vencimiento: deFecha(c.vencimiento) }, config, hoyISO)]));
       // El descuento por pago adelantado ya viene calculado sobre el importe de cada
-      // cuota creada; al recibo va restado, igual que el interés va sumado.
+      // cuota creada; al recibo va restado, y la mora va en un renglón aparte.
       const descuento = adelanto?.descuentos ?? new Map<number, number>();
-      const cobrado = (c: { id: number; importe: number }) =>
-        c.importe + (recargo.get(c.id) ?? 0) - (descuento.get(c.id) ?? 0);
+      const sinMora = (c: { id: number; importe: number }) => c.importe - (descuento.get(c.id) ?? 0);
+      const cobrado = (c: { id: number; importe: number }) => sinMora(c) + (mora.get(c.id) ?? 0);
       const total = cuotas.reduce((t, c) => t + cobrado(c), 0);
       const cobro = await tx.cobro.create({
         data: {
@@ -186,7 +185,7 @@ export class CobrosService {
           total,
           observaciones: datos.observaciones,
           usuarioId: usuario.id,
-          detalles: { create: cuotas.map((c) => ({ cuotaId: c.id, importe: cobrado(c) })) },
+          detalles: { create: cuotas.map((c) => ({ cuotaId: c.id, importe: cobrado(c), mora: mora.get(c.id) ?? 0 })) },
         },
       });
 
@@ -206,15 +205,22 @@ export class CobrosService {
         },
         medio: datos.medio,
         observaciones: datos.observaciones,
-        detalles: cuotas.map((c) => ({
-          // La social ya se nombra sola; la de parcela se aclara, porque su concepto es el período.
-          concepto: `${c.origen === 'PARCELA' ? `Cuota de parcela ${concepto(c)}` : concepto(c)}${c.adelantada ? ' (adelantada)' : ''}`,
-          parcela: c.parcela ? aParcelaUbicada(c.parcela).etiqueta : '—',
-          vencimiento: deFecha(c.vencimiento),
-          importe: cobrado(c),
-          interes: recargo.get(c.id) || undefined,
-          descuento: descuento.get(c.id) || undefined,
-        })),
+        detalles: cuotas.flatMap((c) => {
+          const parcela = c.parcela ? aParcelaUbicada(c.parcela).etiqueta : '—';
+          const vencimiento = deFecha(c.vencimiento);
+          const cuota = {
+            // La social ya se nombra sola; la de parcela se aclara, porque su concepto es el período.
+            concepto: `${c.origen === 'PARCELA' ? `Cuota de parcela ${concepto(c)}` : concepto(c)}${c.adelantada ? ' (adelantada)' : ''}`,
+            parcela,
+            vencimiento,
+            importe: sinMora(c),
+            descuento: descuento.get(c.id) || undefined,
+          };
+          const interes = mora.get(c.id);
+          return interes
+            ? [cuota, { concepto: `Interés por mora ${concepto(c)}`, parcela, vencimiento, importe: interes }]
+            : [cuota];
+        }),
         total,
         registradoPor: usuario.nombre,
       };
@@ -343,6 +349,7 @@ export class CobrosService {
         parcela: d.cuota.parcela && aParcelaUbicada(d.cuota.parcela),
         vencimiento: deFecha(d.cuota.vencimiento),
         importe: d.importe,
+        mora: d.mora,
         adelantada: d.cuota.adelantada,
       })),
     };

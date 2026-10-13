@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Avatar, Badge } from '@/components/ui/display';
 import { Dialog } from '@/components/ui/dialog';
 import { Field, Input, Textarea } from '@/components/ui/field';
+import { admiteMora, morasPorDefecto, RenglonMora, resumirMoras, type Moras } from '@/features/cuotas/mora';
 import { useSocios } from '@/features/socios/api';
 import { ApiError } from '@/lib/api';
 import { fecha as formatoFecha, dni as formatoDni, iniciales, nombreCompleto, plural } from '@/lib/formato';
@@ -37,6 +38,7 @@ export function TransferirDialog({ parcela, onCerrar }: { parcela: ParcelaListIt
   const [anticipo, setAnticipo] = useState('');
   const [cuotasDelPlan, setCuotasDelPlan] = useState('6');
   const [primerVencimiento, setPrimerVencimiento] = useState(hoy);
+  const [moras, setMoras] = useState<Moras>({});
   const transferir = useTransferirParcela(parcela?.id ?? 0);
   const { data: deuda, isPending: cargandoDeuda } = useDeudaDeTransferencia(parcela?.id ?? null, fecha);
 
@@ -51,22 +53,28 @@ export function TransferirDialog({ parcela, onCerrar }: { parcela: ParcelaListIt
     }
   }, [parcela]);
 
+  // Las cuotas vencidas de la deuda arrancan con la mora propuesta; se puede cambiar o quitar.
+  useEffect(() => setMoras(morasPorDefecto(deuda?.cuotas ?? [])), [deuda]);
+
   const hayDeuda = !!deuda && deuda.total > 0;
+  const mora = resumirMoras(moras, (deuda?.cuotas ?? []).map((c) => c.id));
+  const deudaTotal = (deuda?.total ?? 0) + mora.total;
   const anticipoCentavos = Math.max(0, aCentavos(anticipo) ?? 0);
   const cantidadCuotas = Number(cuotasDelPlan);
-  const anticipoExcesivo = hayDeuda && anticipoCentavos >= deuda.total;
+  const anticipoExcesivo = hayDeuda && anticipoCentavos >= deudaTotal;
   const planValido =
     !hayDeuda ||
     (cantidadCuotas >= 1 &&
       cantidadCuotas <= 60 &&
       !anticipoExcesivo &&
+      !mora.invalida &&
       /^\d{4}-\d{2}-\d{2}$/.test(primerVencimiento) &&
       primerVencimiento >= fecha);
 
   const simulacion =
     hayDeuda && planValido
       ? simularPlan({
-          deudaTotal: deuda.total,
+          deudaTotal,
           anticipo: anticipoCentavos,
           cantidadCuotas,
           fecha,
@@ -85,6 +93,7 @@ export function TransferirDialog({ parcela, onCerrar }: { parcela: ParcelaListIt
               plan: {
                 cantidadCuotas,
                 anticipo: anticipo || 0,
+                moras: mora.lista,
                 primerVencimiento,
                 toleranciaVencidas: TOLERANCIA_VENCIDAS,
                 observaciones: `Deuda refinanciada al transferir la parcela ${parcela?.etiqueta ?? ''}`.trim(),
@@ -168,6 +177,9 @@ export function TransferirDialog({ parcela, onCerrar }: { parcela: ParcelaListIt
             ) : (
               hayDeuda && <DeudaYPlan
                 deuda={deuda}
+                deudaTotal={deudaTotal}
+                moras={moras}
+                onMoras={setMoras}
                 anticipo={anticipo}
                 onAnticipo={setAnticipo}
                 cuotas={cuotasDelPlan}
@@ -207,6 +219,9 @@ export function TransferirDialog({ parcela, onCerrar }: { parcela: ParcelaListIt
 
 function DeudaYPlan({
   deuda,
+  deudaTotal,
+  moras,
+  onMoras,
   anticipo,
   onAnticipo,
   cuotas,
@@ -218,6 +233,10 @@ function DeudaYPlan({
   simulacion,
 }: {
   deuda: DeudaDeTransferencia;
+  /** La deuda más la mora que se haya dejado: lo que refinancia el plan. */
+  deudaTotal: number;
+  moras: Moras;
+  onMoras: (moras: Moras) => void;
   anticipo: string;
   onAnticipo: (v: string) => void;
   cuotas: string;
@@ -228,6 +247,7 @@ function DeudaYPlan({
   anticipoExcesivo: boolean;
   simulacion: ReturnType<typeof simularPlan> | null;
 }) {
+  const conMora = deuda.cuotas.filter(admiteMora);
   return (
     <div className="flex flex-col gap-4 rounded-control border border-pend bg-pend-fondo/40 px-4 py-4">
       <div className="flex items-start gap-2.5 text-sm [&_svg]:mt-0.5 [&_svg]:size-4 [&_svg]:shrink-0">
@@ -238,6 +258,26 @@ function DeudaYPlan({
           {nombreCompleto(deuda.socio)}, que sale: se refinancia en un plan suyo antes de entregar la parcela.
         </span>
       </div>
+
+      {conMora.length > 0 && (
+        <div className="flex flex-col gap-2 rounded-control border border-borde bg-superficie px-3 py-2.5">
+          {conMora.map((c) => (
+            <div key={c.id} className="flex flex-col gap-1.5">
+              <span className="flex items-baseline justify-between gap-3 text-[13px]">
+                <span className="first-letter:uppercase">
+                  {c.etiqueta} <span className="text-tenue">· venció el {formatoFecha(c.vencimiento)}</span>
+                </span>
+                <span className="tabular">{pesos(c.importe)}</span>
+              </span>
+              <RenglonMora cuota={c} moras={moras} onCambiar={onMoras} />
+            </div>
+          ))}
+          <p className="border-t border-borde pt-2 text-[13px] text-tenue">
+            Con el interés por mora, el plan refinancia{' '}
+            <span className="font-semibold tabular text-tinta">{pesos(deudaTotal)}</span>.
+          </p>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Field label="Anticipo" htmlFor="anticipo-transferencia" error={anticipoExcesivo ? 'Tiene que ser menor que la deuda' : undefined} ayuda={anticipoExcesivo ? undefined : 'Opcional'}>

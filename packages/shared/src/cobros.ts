@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { fechaSchema, hoy, paginacionSchema, textoOpcional } from './common';
 import { mesSchema } from './cuotas';
+import { morasSchema } from './interes';
 import type { Periodicidad } from './periodos';
 import type { ParcelaUbicada, SocioResumen } from './parcelas';
 
@@ -42,6 +43,8 @@ export const cobroCrearSchema = z
      * generar como siempre cuando llegue su período.
      */
     adelantarExcepto: z.array(z.string().max(60)).max(400).default([]),
+    /** Interés por mora que se suma a las cuotas vencidas de `cuotaIds`, si se decide cobrarlo. */
+    moras: morasSchema,
     observaciones: textoOpcional(300),
   })
   // Un cobro sin cuotas tildadas vale si es un adelanto puro, pero vacío del todo no.
@@ -89,7 +92,10 @@ export interface CuotaCobrada {
   /** Null si la cuota es de un plan de pago: esas no cuelgan de una parcela. */
   parcela: ParcelaUbicada | null;
   vencimiento: string;
+  /** Lo cobrado por la cuota, con la mora incluida si se cobró. */
   importe: number;
+  /** Cuánto de ese importe fue interés por mora. 0 si no se cobró. */
+  mora: number;
   /** Se creó y se cobró en este mismo cobro, por adelantado. */
   adelantada: boolean;
 }
@@ -152,13 +158,16 @@ export interface DatosRecibo {
   };
   medio: MedioPago;
   observaciones: string | null;
+  /** Un renglón por cuota y, si se cobró mora, otro aparte con el interés de esa cuota. */
   detalles: {
     concepto: string;
     parcela: string;
     vencimiento: string;
-    /** Lo cobrado por esa cuota: su importe más el interés por mora que tenía ese día. */
     importe: number;
-    /** Cuánto de ese importe fue interés. Los recibos viejos no lo traen. */
+    /**
+     * Solo en recibos de cuando el interés viajaba dentro del importe de la cuota: cuánto
+     * de ese importe fue interés. Hoy la mora va en su propio renglón.
+     */
     interes?: number;
     /** Lo que se descontó por pagarla adelantada, ya restado del importe. */
     descuento?: number;

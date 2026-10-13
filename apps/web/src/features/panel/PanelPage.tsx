@@ -238,8 +238,8 @@ function Evolucion({ meses }: { meses: MesDeEvolucion[] }) {
       )}
 
       <p className="text-[13px] text-tenue">
-        «Emitido» son las cuotas que vencían cada mes; «cobrado», lo que efectivamente entró ese mes. La diferencia
-        entre las dos barras es la mora del período.
+        «Emitido» son las cuotas que vencían cada mes; «cobrado», lo que efectivamente entró ese mes, con el
+        interés por mora que se haya cobrado. La diferencia entre las dos barras es lo que quedó impago en el período.
       </p>
     </Card>
   );

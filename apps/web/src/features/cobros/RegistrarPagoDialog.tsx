@@ -24,6 +24,7 @@ import { Field, Input, Select, Textarea } from '@/components/ui/field';
 import { useConfiguracionAdelanto } from '@/features/configuracion/api';
 import { useAdelantoPrevio, useCuotasDeSocio } from '@/features/cuotas/api';
 import { BadgeCuota } from '@/features/cuotas/estados';
+import { admiteMora, conMora, morasPorDefecto, RenglonMora, resumirMoras, type Moras } from '@/features/cuotas/mora';
 import { useSocios } from '@/features/socios/api';
 import { useLoteoActivo } from '@/layout/loteo-activo';
 import { ApiError } from '@/lib/api';
@@ -198,6 +199,9 @@ function FormularioDeCobro({
   onEmitido: (c: CobroDetalle) => void;
 }) {
   const [seleccion, setSeleccion] = useState<number[]>([]);
+  // Interés por mora de las cuotas tildadas: las vencidas lo traen propuesto y se puede
+  // cambiar o quitar.
+  const [moras, setMoras] = useState<Moras>({});
   const [medio, setMedio] = useState<MedioPago>('EFECTIVO');
   const [fechaCobro, setFechaCobro] = useState(hoy);
   const [observaciones, setObservaciones] = useState('');
@@ -232,6 +236,7 @@ function FormularioDeCobro({
 
   useEffect(() => {
     setSeleccion([]);
+    setMoras({});
     setMedio('EFECTIVO');
     setFechaCobro(hoy());
     setObservaciones('');
@@ -239,14 +244,24 @@ function FormularioDeCobro({
     setExcluidas([]);
   }, [socio.id]);
 
-  // Lo que se cobra es el importe más el interés por mora acumulado hasta hoy: el
-  // servidor vuelve a calcularlo al registrar el pago y tiene que dar lo mismo.
-  const deuda = impagas.filter((c) => seleccion.includes(c.id)).reduce((t, c) => t + c.importe + c.interes, 0);
+  // Lo que se cobra es el importe de cada cuota más la mora que se haya dejado en ella.
+  const deuda = impagas.filter((c) => seleccion.includes(c.id)).reduce((t, c) => t + c.importe, 0);
+  const mora = resumirMoras(moras, seleccion);
   // Las adelantadas todavía no existen: su importe lo calcula el servidor en la vista
   // previa y lo vuelve a calcular al cobrar, así que tiene que dar lo mismo.
-  const total = deuda + adelantado.total;
+  const total = deuda + mora.total + adelantado.total;
   const cantidad = seleccion.length + adelantado.cantidad;
-  const alternar = (id: number) => setSeleccion((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+  const alternar = (cuota: CuotaListItem) => {
+    const marcar = !seleccion.includes(cuota.id);
+    setSeleccion((s) => (marcar ? [...s, cuota.id] : s.filter((x) => x !== cuota.id)));
+    setMoras((m) => conMora(m, cuota, marcar));
+  };
+  const alternarTodas = () => {
+    const marcar = seleccion.length !== impagas.length;
+    setSeleccion(marcar ? impagas.map((c) => c.id) : []);
+    // Las que ya estaban tildadas conservan lo que se les haya corregido o quitado.
+    setMoras((m) => (marcar ? { ...morasPorDefecto(impagas.filter((c) => !seleccion.includes(c.id))), ...m } : {}));
+  };
 
   const enviar = () =>
     registrar.mutate(
@@ -255,6 +270,7 @@ function FormularioDeCobro({
         fecha: fechaCobro,
         medio,
         cuotaIds: seleccion,
+        moras: mora.lista,
         adelantarHasta: adelantado.cantidad > 0 ? adelantarHasta : null,
         adelantarExcepto: excluidas,
         observaciones: observaciones || null,
@@ -295,6 +311,7 @@ function FormularioDeCobro({
             ) : (
               <>
                 {plural(cantidad, 'cuota')}
+                {mora.total > 0 && <> · {pesos(mora.total)} de interés por mora</>}
                 {adelantado.descuento > 0 && (
                   <span className="text-ok"> · −{pesos(adelantado.descuento)} de descuento</span>
                 )}{' '}
@@ -306,7 +323,7 @@ function FormularioDeCobro({
             <Button variante="secundario" onClick={() => onAbiertoChange(false)}>
               Cancelar
             </Button>
-            <Button cargando={registrar.isPending} disabled={cantidad === 0 || adelanto.isFetching} onClick={enviar}>
+            <Button cargando={registrar.isPending} disabled={cantidad === 0 || adelanto.isFetching || mora.invalida} onClick={enviar}>
               Cobrar y emitir recibo
             </Button>
           </div>
@@ -327,7 +344,9 @@ function FormularioDeCobro({
             cuotas={impagas}
             seleccion={seleccion}
             onAlternar={alternar}
-            onTodas={() => setSeleccion(seleccion.length === impagas.length ? [] : impagas.map((c) => c.id))}
+            onTodas={alternarTodas}
+            moras={moras}
+            onMoras={setMoras}
           />
         )}
 
@@ -379,11 +398,15 @@ function TablaDeCuotas({
   seleccion,
   onAlternar,
   onTodas,
+  moras,
+  onMoras,
 }: {
   cuotas: CuotaListItem[];
   seleccion: number[];
-  onAlternar: (id: number) => void;
+  onAlternar: (cuota: CuotaListItem) => void;
   onTodas: () => void;
+  moras: Moras;
+  onMoras: (moras: Moras) => void;
 }) {
   const todas = seleccion.length === cuotas.length;
   return (
@@ -399,26 +422,28 @@ function TablaDeCuotas({
         {cuotas.map((c) => {
           const marcada = seleccion.includes(c.id);
           return (
-            <label
-              key={c.id}
-              className={`flex cursor-pointer items-center gap-3 border-b border-borde px-4 py-2.5 text-sm last:border-b-0 ${marcada ? 'bg-pino-50' : 'hover:bg-superficie-2'}`}
-            >
-              <input type="checkbox" checked={marcada} onChange={() => onAlternar(c.id)} className="size-4 accent-pino-600" />
-              <span className="w-[74px] shrink-0 font-semibold tabular">
-                {c.parcela?.etiqueta ?? (
-                  <span className="font-normal text-tenue">{c.origen === 'SOCIO' ? 'Social' : 'Plan'}</span>
-                )}
-              </span>
-              <span className="min-w-0 flex-1 truncate first-letter:uppercase">{c.etiqueta}</span>
-              <span className="w-[92px] shrink-0 tabular text-tenue">{fecha(c.vencimiento)}</span>
-              <span className="w-[70px] shrink-0">
-                <BadgeCuota estado={c.estado} />
-              </span>
-              <span className="flex w-[110px] shrink-0 flex-col items-end tabular">
-                <span>{pesos(c.importe + c.interes)}</span>
-                {c.interes > 0 && <span className="text-xs text-tenue">incluye {pesos(c.interes)} de interés</span>}
-              </span>
-            </label>
+            <div key={c.id} className={`border-b border-borde last:border-b-0 ${marcada ? 'bg-pino-50' : 'hover:bg-superficie-2'}`}>
+              <label className="flex cursor-pointer items-center gap-3 px-4 py-2.5 text-sm">
+                <input type="checkbox" checked={marcada} onChange={() => onAlternar(c)} className="size-4 accent-pino-600" />
+                <span className="w-[74px] shrink-0 font-semibold tabular">
+                  {c.parcela?.etiqueta ?? (
+                    <span className="font-normal text-tenue">{c.origen === 'SOCIO' ? 'Social' : 'Plan'}</span>
+                  )}
+                </span>
+                <span className="min-w-0 flex-1 truncate first-letter:uppercase">{c.etiqueta}</span>
+                <span className="w-[92px] shrink-0 tabular text-tenue">{fecha(c.vencimiento)}</span>
+                <span className="w-[70px] shrink-0">
+                  <BadgeCuota estado={c.estado} />
+                </span>
+                <span className="w-[110px] shrink-0 text-right tabular">{pesos(c.importe)}</span>
+              </label>
+              {/* La mora es un concepto aparte de la cuota: solo se ofrece en las vencidas que se cobran. */}
+              {marcada && admiteMora(c) && (
+                <div className="pb-2.5 pl-[44px] pr-4">
+                  <RenglonMora cuota={c} moras={moras} onCambiar={onMoras} />
+                </div>
+              )}
+            </div>
           );
         })}
       </div>

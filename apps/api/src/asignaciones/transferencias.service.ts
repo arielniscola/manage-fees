@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { hoy, interesDeCuota, pesos, primerPeriodoDelNuevoTitular } from '@mf/shared';
+import { pesos, primerPeriodoDelNuevoTitular } from '@mf/shared';
 import type {
   DeudaDeTransferencia,
   Paginado,
@@ -13,7 +13,6 @@ import { Prisma } from '@prisma/client';
 import { conflicto, noEncontrado, reglaIncumplida } from '../common/errores';
 import { aFecha, deFecha, fechaLegible } from '../common/fechas';
 import { aParcelaUbicada, parcelaResumen } from '../common/parcela';
-import { InteresService } from '../configuracion/interes.service';
 import { CuotasService } from '../cuotas/cuotas.service';
 import { PlanesService } from '../planes/planes.service';
 import { PrismaService } from '../prisma/prisma.module';
@@ -40,7 +39,6 @@ export class TransferenciasService {
     private readonly prisma: PrismaService,
     private readonly cuotas: CuotasService,
     private readonly planes: PlanesService,
-    private readonly interes: InteresService,
   ) {}
 
   /**
@@ -62,7 +60,7 @@ export class TransferenciasService {
     return {
       socio: vigente.socio,
       cuotas,
-      total: cuotas.reduce((t, c) => t + c.importe + c.interes, 0),
+      total: cuotas.reduce((t, c) => t + c.importe, 0),
       vencidas: cuotas.filter((c) => c.estado === 'vencida').length,
     };
   }
@@ -205,18 +203,12 @@ export class TransferenciasService {
     const impagas = await tx.cuota.findMany({
       // El anticipo de entrada impago también es deuda de la parcela, igual que en `deuda`.
       where: { parcelaId, origen: { in: ['PARCELA', 'ANTICIPO'] }, estado: 'PENDIENTE', periodo: { lt: corte } },
-      select: { id: true, importe: true, vencimiento: true, estado: true, origen: true },
+      select: { id: true, importe: true },
     });
     if (impagas.length === 0) return null;
 
-    const hoyISO = hoy();
-    const config = await this.interes.vigente();
-    const total = impagas.reduce(
-      (t, c) => t + c.importe + interesDeCuota({ ...c, vencimiento: deFecha(c.vencimiento) }, config, hoyISO),
-      0,
-    );
-
     if (!datos.plan) {
+      const total = impagas.reduce((t, c) => t + c.importe, 0);
       throw conflicto(
         `La parcela tiene ${impagas.length === 1 ? 'una cuota impaga' : `${impagas.length} cuotas impagas`} ` +
           `por ${pesos(total)} que quedan con el titular actual. Refinanciá esa deuda en un plan de pago ` +
@@ -231,6 +223,7 @@ export class TransferenciasService {
       fecha: datos.fecha,
       cantidadCuotas: datos.plan.cantidadCuotas,
       anticipo: datos.plan.anticipo,
+      moras: datos.plan.moras,
       primerVencimiento: datos.plan.primerVencimiento,
       toleranciaVencidas: datos.plan.toleranciaVencidas,
       observaciones: datos.plan.observaciones,

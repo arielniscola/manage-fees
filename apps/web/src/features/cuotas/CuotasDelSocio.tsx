@@ -157,10 +157,7 @@ function GruposDeCuotas({ grupos, limite }: { grupos: Grupo[]; limite?: number }
                     {c.historica && <span className="ml-1.5 text-xs font-normal normal-case text-tenue">(historial)</span>}
                   </Td>
                   <Td className="tabular text-tenue">Vence {fecha(c.vencimiento)}</Td>
-                  <Td className="text-right tabular">
-                    {pesos(c.importe + c.interes)}
-                    {c.interes > 0 && <span className="block text-xs text-tenue">incluye {pesos(c.interes)} de interés</span>}
-                  </Td>
+                  <Td className="text-right tabular">{pesos(c.importe)}</Td>
                   <Td className="w-px whitespace-nowrap">
                     <BadgeCuota estado={c.estado} diasVencida={c.diasVencida} />
                   </Td>

@@ -1,12 +1,14 @@
 import { Injectable } from '@nestjs/common';
-import type { ConfiguracionInteres, ConfiguracionInteresGuardar } from '@mf/shared';
-import type { ConfiguracionInteres as FilaInteres } from '@prisma/client';
+import { admiteMora, type ConfiguracionInteres, type ConfiguracionInteresGuardar, type MoraDeCuota } from '@mf/shared';
+import type { ConfiguracionInteres as FilaInteres, EstadoCuota, OrigenCuota } from '@prisma/client';
+import { reglaIncumplida } from '../common/errores';
+import { deFecha } from '../common/fechas';
 import { PrismaService } from '../prisma/prisma.module';
 
 /**
  * Interés por mora. Es una única fila, como la configuración de avisos: el club elige el
- * porcentaje, el día del mes en que se aplica y si se repite todos los meses o no, y todo lo que muestra o cobra deuda le
- * pregunta a este servicio cuánto recargo le corresponde a cada cuota impaga.
+ * porcentaje que se propone al cobrar una cuota vencida, y todo lo que cobra o refinancia
+ * deuda pasa por acá para validar la mora que se decidió sumar.
  */
 @Injectable()
 export class InteresService {
@@ -23,11 +25,37 @@ export class InteresService {
 
   /**
    * La configuración tal como la consumen los cálculos. Devuelve null cuando el interés
-   * está apagado, que es lo que `interesDeCuota` espera para no recargar nada.
+   * está apagado, que es lo que `moraSugerida` espera para no proponer nada.
    */
   async vigente(): Promise<ConfiguracionInteres | null> {
     const config = await this.obtener();
     return config.activo && config.porcentaje > 0 ? config : null;
+  }
+
+  /**
+   * La mora que se suma a cada cuota de un cobro o de un plan, por id. El importe lo
+   * decide quien cobra —el sugerido es solo el valor inicial—, pero no a qué cuotas: tiene
+   * que ser una de las elegidas, de parcela y ya vencida.
+   */
+  async moras(
+    cuotas: { id: number; vencimiento: Date; estado: EstadoCuota; origen: OrigenCuota }[],
+    pedidas: MoraDeCuota[],
+    hoyISO: string,
+  ): Promise<Map<number, number>> {
+    const moras = new Map<number, number>();
+    if (pedidas.length === 0) return moras;
+    if (!(await this.vigente())) throw reglaIncumplida('El interés por mora está apagado en la configuración', 'moras');
+
+    const porId = new Map(cuotas.map((c) => [c.id, c]));
+    for (const { cuotaId, importe } of pedidas) {
+      const cuota = porId.get(cuotaId);
+      if (!cuota) throw reglaIncumplida('La mora tiene que ser de una de las cuotas elegidas', 'moras');
+      if (!admiteMora({ ...cuota, vencimiento: deFecha(cuota.vencimiento) }, hoyISO)) {
+        throw reglaIncumplida('Solo se puede sumar mora a una cuota de parcela vencida', 'moras');
+      }
+      moras.set(cuotaId, importe);
+    }
+    return moras;
   }
 
   /** Se crea con los valores por defecto la primera vez que alguien la pide. */
@@ -38,8 +66,6 @@ export class InteresService {
 
 const aDTO = (f: FilaInteres): ConfiguracionInteres => ({
   activo: f.activo,
-  modo: f.modo,
-  diaAplicacion: f.diaAplicacion,
   porcentaje: Number(f.porcentaje),
   actualizadoEn: f.updatedAt.toISOString(),
 });

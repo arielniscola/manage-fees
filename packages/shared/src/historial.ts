@@ -23,7 +23,7 @@ import {
  * cuota de 2023 valía lo que valía— y las que ya estaban pagas no emiten recibo: quedan
  * PAGADAS sin cobro, así la caja del club sigue mostrando solo lo que cobró de verdad. Las
  * adeudadas son cuotas pendientes como cualquier otra: entran en la deuda del socio, se
- * cobran desde registrar pago y acumulan interés por mora si está activo.
+ * cobran desde registrar pago y, si están vencidas, se les puede sumar interés por mora.
  */
 
 /** Las columnas que entiende el archivo, con los nombres alternativos más habituales. */

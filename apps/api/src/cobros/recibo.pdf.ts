@@ -151,9 +151,9 @@ function tabla(doc: Doc, datos: DatosRecibo) {
   doc.font('Helvetica').fontSize(10).fillColor(TINTA);
   for (const d of datos.detalles) {
     const alto = 21;
-    // Ni el interés por mora ni el descuento por adelantar son un renglón aparte: viajan
-    // dentro del importe de su cuota, y se aclaran al lado del concepto para que el socio
-    // vea de dónde sale la diferencia.
+    // El descuento por adelantar no es un renglón aparte: viaja dentro del importe de su
+    // cuota y se aclara al lado del concepto. La mora sí tiene su propio renglón; el
+    // «incluye interés» queda para los recibos de cuando viajaba dentro de la cuota.
     const aclaracion = d.interes
       ? ` (incluye ${pesos(d.interes)} de interés)`
       : d.descuento

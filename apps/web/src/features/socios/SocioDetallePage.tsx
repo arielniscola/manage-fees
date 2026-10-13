@@ -74,9 +74,6 @@ export function SocioDetallePage() {
                 {socio.estadoCuenta.vencidas > 0 && `, ${socio.estadoCuenta.vencidas} vencida${socio.estadoCuenta.vencidas === 1 ? '' : 's'}`}
               </span>
             )}
-            {socio.estadoCuenta.interes > 0 && (
-              <span className="text-xs text-tenue">incluye {pesos(socio.estadoCuenta.interes)} de interés</span>
-            )}
           </div>
         </div>
       </Card>

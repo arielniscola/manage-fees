@@ -120,9 +120,6 @@ function Cabecera({ parcela }: { parcela: ParcelaDetalle }) {
                 `, ${parcela.estadoCuenta.vencidas} vencida${parcela.estadoCuenta.vencidas === 1 ? '' : 's'}`}
             </span>
           )}
-          {parcela.estadoCuenta.interes > 0 && (
-            <span className="text-xs text-tenue">incluye {pesos(parcela.estadoCuenta.interes)} de interés</span>
-          )}
         </div>
       </div>
     </Card>
@@ -267,10 +264,7 @@ function CuotasDeLaParcela({ parcela }: { parcela: ParcelaDetalle }) {
                   </Link>
                 </Td>
                 <Td className="tabular text-tenue">{fecha(c.vencimiento)}</Td>
-                <Td className="text-right tabular">
-                  {pesos(c.importe + c.interes)}
-                  {c.interes > 0 && <span className="block text-xs text-tenue">incluye {pesos(c.interes)} de interés</span>}
-                </Td>
+                <Td className="text-right tabular">{pesos(c.importe)}</Td>
                 <Td className="w-px whitespace-nowrap">
                   <BadgeCuota estado={c.estado} diasVencida={c.diasVencida} />
                 </Td>

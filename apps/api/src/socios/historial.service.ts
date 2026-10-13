@@ -35,7 +35,7 @@ interface ParcelaConTitulares {
  * en cuotas marcadas como históricas.
  *
  * Las adeudadas son deuda como cualquier otra: se ven en la ficha, se cobran desde
- * registrar pago y acumulan interés por mora. Las pagadas quedan PAGADAS sin cobro ni
+ * registrar pago y se les puede sumar interés por mora. Las pagadas quedan PAGADAS sin cobro ni
  * recibo, porque esa plata no entró por el sistema y no tiene que aparecer en la caja.
  *
  * La importación es en dos pasos sobre el mismo archivo, igual que la del padrón: la

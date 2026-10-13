@@ -5,7 +5,6 @@ import {
   ETIQUETA_MEDIO_PAGO,
   etiquetaPeriodo,
   hoy,
-  interesDeCuota,
   numeroDeParcela,
   numeroPlan,
   numeroRecibo,
@@ -15,9 +14,8 @@ import {
 } from '@mf/shared';
 import { Prisma } from '@prisma/client';
 import { CobrosService } from '../cobros/cobros.service';
-import { aFecha, deFecha } from '../common/fechas';
+import { aFecha } from '../common/fechas';
 import { cuotasDelLoteo, parcelasDelLoteo, sociosDelLoteo, sqlCobroDelLoteo, sqlCuotaDelLoteo } from '../common/loteo';
-import { InteresService } from '../configuracion/interes.service';
 import { PlanesService } from '../planes/planes.service';
 import { PrismaService } from '../prisma/prisma.module';
 import { SociosService } from '../socios/socios.service';
@@ -43,7 +41,6 @@ export class ConsultasService {
     private readonly socios: SociosService,
     private readonly cobros: CobrosService,
     private readonly planes: PlanesService,
-    private readonly interes: InteresService,
   ) {}
 
   /** Cobros del rango, anulados incluidos y marcados como tales. */
@@ -80,32 +77,21 @@ export class ConsultasService {
   // ---------------------------------------------------------------- Agregados del panel
 
   /**
-   * Deuda impaga al día de hoy. No depende del rango: una cuota impaga no tiene corte.
-   * Se recorren las filas en lugar de agregarlas en SQL porque el interés por mora se
-   * calcula al vuelo por cuota, con la misma función que usa el resto de la aplicación.
+   * Deuda impaga al día de hoy, sin mora. No depende del rango: una cuota impaga no tiene corte.
    */
   async deuda(loteoId?: number): Promise<{ total: number; vencida: number; cuotas: number; cuotasVencidas: number }> {
-    const hoyISO = hoy();
-    const corte = aFecha(hoyISO);
-    const [config, pendientes] = await Promise.all([
-      this.interes.vigente(),
-      this.prisma.cuota.findMany({
-        where: { estado: 'PENDIENTE', ...cuotasDelLoteo(loteoId) },
-        select: { importe: true, vencimiento: true, estado: true, origen: true },
-      }),
+    const impagas: Prisma.CuotaWhereInput = { estado: 'PENDIENTE', ...cuotasDelLoteo(loteoId) };
+    const sumar = { _sum: { importe: true }, _count: true } as const;
+    const [todas, vencidas] = await Promise.all([
+      this.prisma.cuota.aggregate({ where: impagas, ...sumar }),
+      this.prisma.cuota.aggregate({ where: { AND: [impagas, { vencimiento: { lt: aFecha(hoy()) } }] }, ...sumar }),
     ]);
-
-    const deuda = { total: 0, vencida: 0, cuotas: 0, cuotasVencidas: 0 };
-    for (const c of pendientes) {
-      const conInteres = c.importe + interesDeCuota({ ...c, vencimiento: deFecha(c.vencimiento) }, config, hoyISO);
-      deuda.total += conInteres;
-      deuda.cuotas += 1;
-      if (c.vencimiento < corte) {
-        deuda.vencida += conInteres;
-        deuda.cuotasVencidas += 1;
-      }
-    }
-    return deuda;
+    return {
+      total: todas._sum.importe ?? 0,
+      vencida: vencidas._sum.importe ?? 0,
+      cuotas: todas._count,
+      cuotasVencidas: vencidas._count,
+    };
   }
 
   async conteos(loteoId?: number): Promise<{ sociosActivos: number; parcelasAsignadas: number; parcelasTotales: number }> {

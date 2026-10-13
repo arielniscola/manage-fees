@@ -260,12 +260,7 @@ export function CuotasPage() {
                         )}
                       </Td>
                       <Td className="tabular">{fecha(c.vencimiento)}</Td>
-                      <Td className="text-right tabular">
-                        {pesos(c.importe + c.interes)}
-                        {c.interes > 0 && (
-                          <span className="block text-xs text-tenue">incluye {pesos(c.interes)} de interés</span>
-                        )}
-                      </Td>
+                      <Td className="text-right tabular">{pesos(c.importe)}</Td>
                       <Td>
                         <BadgeCuota estado={c.estado} diasVencida={c.diasVencida} />
                       </Td>
