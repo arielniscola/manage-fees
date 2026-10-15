@@ -66,3 +66,16 @@ export function useCancelarPlan() {
     onSuccess: invalidar,
   });
 }
+
+export function useEliminarPlan() {
+  const qc = useQueryClient();
+  const invalidar = useInvalidar();
+  return useMutation({
+    mutationFn: (id: number) => api.delete(`/planes/${id}`),
+    onSuccess: (_, id) => {
+      // Sin esto, el detalle todavía abierto se volvería a pedir y daría «no existe».
+      qc.removeQueries({ queryKey: clavesPlanes.detalle(id) });
+      invalidar();
+    },
+  });
+}

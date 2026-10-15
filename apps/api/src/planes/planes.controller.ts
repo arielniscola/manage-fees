@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Post, Query } from '@nestjs/common';
 import {
   planCancelarSchema,
   planCrearSchema,
@@ -39,6 +39,12 @@ export class PlanesController {
     @Body(new ZodPipe(planCancelarSchema)) body: PlanCancelar,
   ) {
     return this.planes.cancelar(id, usuario, body);
+  }
+
+  @Delete(':id')
+  @HttpCode(204)
+  eliminar(@Param('id', ParseIntPipe) id: number) {
+    return this.planes.eliminar(id);
   }
 }
 

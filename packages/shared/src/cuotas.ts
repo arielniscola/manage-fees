@@ -267,6 +267,11 @@ export interface ResultadoGeneracion {
   cuotas: number;
   importe: number;
   socios: number;
+  /**
+   * Cuotas de parcela anuladas a nombre de otro titular que se borran para generar la del
+   * socio en su lugar. Solo pasa generando desde la ficha con «cobrar desde».
+   */
+  reemplazadas: number;
   /** Cuotas que ya existían y por eso no se volvieron a generar. */
   yaExistian: number;
   /** No hay ninguna tarifa configurada: no se puede generar nada todavía. */

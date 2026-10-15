@@ -235,6 +235,29 @@ export class PlanesService {
     return this.obtener(id);
   }
 
+  /**
+   * Borra un plan cancelado junto con sus cuotas, que a esa altura están todas anuladas.
+   * La deuda original ya volvió a pendiente al cancelarlo, así que no se toca. Si alguna
+   * cuota del plan figura en un cobro, aunque esté anulado, el plan queda como historial.
+   */
+  async eliminar(id: number): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      const plan = await tx.planPago.findUnique({
+        where: { id },
+        include: { cuotas: { include: { _count: { select: { detallesCobro: true } } } } },
+      });
+      if (!plan) throw noEncontrado('No existe el plan de pago');
+      if (!plan.canceladoEn) throw conflicto('Solo se pueden eliminar planes cancelados. Cancelalo primero.');
+      if (plan.cuotas.some((c) => c._count.detallesCobro > 0)) {
+        throw conflicto('Alguna cuota del plan figura en un cobro, aunque esté anulado: eliminá primero ese cobro');
+      }
+
+      await tx.cuota.deleteMany({ where: { planId: id } });
+      // Los renglones de deuda refinanciada se borran en cascada.
+      await tx.planPago.delete({ where: { id } });
+    });
+  }
+
   /** Mismo mecanismo que los recibos: correlativo y sin huecos aunque algo falle. */
   private async siguienteNumero(tx: Prisma.TransactionClient): Promise<number> {
     const filas = await tx.$queryRaw<{ valor: number }[]>`

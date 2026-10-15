@@ -1,8 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
-import { AlertCircle, CheckCircle2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Info } from 'lucide-react';
 import { toast } from 'sonner';
-import { hoy, pesos, type SocioDetalle } from '@mf/shared';
+import { etiquetaPeriodo, hoy, pesos, type SocioDetalle } from '@mf/shared';
 import { Button } from '@/components/ui/button';
 import { Tabla, Td, Th } from '@/components/ui/display';
 import { Dialog } from '@/components/ui/dialog';
@@ -44,6 +44,14 @@ export function GenerarPeriodoDialog({
   }, [abierto]);
 
   const nada = previa.data && !previa.data.sinTarifa && previa.data.cuotas === 0;
+
+  // Parcelas del socio que se le van a cobrar desde antes de que fueran suyas. Se permite,
+  // pero conviene que quien genera lo vea. Por parcela cuenta su primera asignación.
+  const primeras = new Map<number, SocioDetalle['asignaciones'][number]>();
+  for (const a of [...(socio?.asignaciones ?? [])].sort((x, y) => x.desde.localeCompare(y.desde))) {
+    if (!primeras.has(a.parcela.id)) primeras.set(a.parcela.id, a);
+  }
+  const retrotraidas = desde ? [...primeras.values()].filter((a) => a.desde > `${desde}-01`) : [];
 
   return (
     <Dialog
@@ -99,13 +107,23 @@ export function GenerarPeriodoDialog({
             htmlFor="generar-desde"
             ayuda={
               socio
-                ? 'Genera también los meses anteriores a su asignación, desde este mes, si fue el primer titular de la parcela.'
+                ? 'Genera también los meses anteriores a su asignación, desde este mes, aunque la parcela haya tenido otro titular.'
                 : 'Genera también los meses anteriores a la asignación, desde este mes, a nombre del primer titular.'
             }
           >
             <Input id="generar-desde" type="month" value={desde} onChange={(e) => setDesde(e.target.value)} className="tabular" />
           </Field>
         </div>
+
+        {retrotraidas.length > 0 && (
+          <Aviso tono="info" icono={<Info />}>
+            {retrotraidas.length === 1 ? 'La parcela ' : 'Las parcelas '}
+            {retrotraidas.map((a) => `${a.parcela.etiqueta} (desde el ${fecha(a.desde)})`).join(', ')}{' '}
+            {retrotraidas.length === 1 ? 'se le asignó' : 'se le asignaron'} después de que empezara{' '}
+            {etiquetaPeriodo(desde, 'MENSUAL')}. Las cuotas de esos meses se generan igual a su nombre, aunque todavía no era
+            titular. Si otro titular ya tiene la de algún período, esa no se duplica; si la tiene anulada, se reemplaza.
+          </Aviso>
+        )}
 
         {previa.data && previa.data.parcelasSinImporte > 0 && (
           <Aviso tono="pend" icono={<AlertCircle />}>
@@ -178,6 +196,8 @@ export function GenerarPeriodoDialog({
             </div>
             <p className="text-[13px] text-tenue">
               {!socio && `Alcanza a ${plural(previa.data.socios, 'socio')}.`}
+              {previa.data.reemplazadas > 0 &&
+                ` Se ${previa.data.reemplazadas === 1 ? 'reemplaza 1 cuota anulada' : `reemplazan ${previa.data.reemplazadas} cuotas anuladas`} del titular anterior.`}
               {previa.data.yaExistian > 0 && ` Se saltean ${plural(previa.data.yaExistian, 'cuota')} que ya existían.`}
             </p>
           </>
@@ -187,9 +207,10 @@ export function GenerarPeriodoDialog({
   );
 }
 
-function Aviso({ tono, icono, children }: { tono: 'ok' | 'pend' | 'mor'; icono: ReactNode; children: ReactNode }) {
+function Aviso({ tono, icono, children }: { tono: 'ok' | 'pend' | 'mor' | 'info'; icono: ReactNode; children: ReactNode }) {
   const estilos = {
     ok: 'bg-ok-fondo text-ok',
+    info: 'bg-superficie-2 text-tinta',
     pend: 'bg-pend-fondo text-pend',
     mor: 'bg-mor-fondo text-mor',
   }[tono];

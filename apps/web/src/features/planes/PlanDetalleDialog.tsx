@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link } from 'react-router';
-import { Ban } from 'lucide-react';
+import { Ban, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   ETIQUETA_ESTADO_PLAN,
@@ -19,7 +19,7 @@ import { Dialog } from '@/components/ui/dialog';
 import { Field, Textarea } from '@/components/ui/field';
 import { BadgeCuota } from '@/features/cuotas/estados';
 import { fecha, nombreCompleto, plural } from '@/lib/formato';
-import { useCancelarPlan, usePlan } from './api';
+import { useCancelarPlan, useEliminarPlan, usePlan } from './api';
 
 const TONO: Record<EstadoPlan, 'ok' | 'pend' | 'mor' | 'baja'> = {
   vigente: 'pend',
@@ -32,10 +32,11 @@ export function BadgePlan({ estado }: { estado: EstadoPlan }) {
   return <Badge tono={TONO[estado]}>{ETIQUETA_ESTADO_PLAN[estado]}</Badge>;
 }
 
-/** Seguimiento del plan: sus cuotas, la deuda que absorbió y la opción de cancelarlo. */
+/** Seguimiento del plan: sus cuotas, la deuda que absorbió y la opción de cancelarlo o, ya cancelado, eliminarlo. */
 export function PlanDetalleDialog({ planId, onCerrar }: { planId: number | null; onCerrar: () => void }) {
   const { data: plan, isPending, isError, error } = usePlan(planId);
   const [cancelando, setCancelando] = useState(false);
+  const [eliminando, setEliminando] = useState(false);
 
   return (
     <>
@@ -48,7 +49,9 @@ export function PlanDetalleDialog({ planId, onCerrar }: { planId: number | null;
           plan && (
             <div className="flex flex-1 items-center justify-between gap-4">
               {plan.estado === 'cancelado' ? (
-                <span className="text-sm text-tenue">Este plan está cancelado.</span>
+                <Button variante="peligro" tamanio="sm" onClick={() => setEliminando(true)}>
+                  <Trash2 /> Eliminar plan
+                </Button>
               ) : (
                 <Button variante="peligro" tamanio="sm" onClick={() => setCancelando(true)}>
                   <Ban /> Cancelar plan
@@ -174,6 +177,14 @@ export function PlanDetalleDialog({ planId, onCerrar }: { planId: number | null;
       </Dialog>
 
       <CancelarPlanDialog plan={cancelando ? (plan ?? null) : null} onCerrar={() => setCancelando(false)} />
+      <EliminarPlanDialog
+        plan={eliminando ? (plan ?? null) : null}
+        onCerrar={() => setEliminando(false)}
+        onEliminado={() => {
+          setEliminando(false);
+          onCerrar();
+        }}
+      />
     </>
   );
 }
@@ -247,5 +258,53 @@ function CancelarPlanDialog({ plan, onCerrar }: { plan: PlanDetalle | null; onCe
         </Field>
       </form>
     </Dialog>
+  );
+}
+
+function EliminarPlanDialog({
+  plan,
+  onCerrar,
+  onEliminado,
+}: {
+  plan: PlanDetalle | null;
+  onCerrar: () => void;
+  onEliminado: () => void;
+}) {
+  const eliminar = useEliminarPlan();
+  return (
+    <Dialog
+      abierto={!!plan}
+      onAbiertoChange={(v) => !v && onCerrar()}
+      ancho="sm"
+      titulo="Eliminar plan de pago"
+      descripcion={
+        plan
+          ? `El plan N° ${numeroPlan(plan.numero)} y sus cuotas anuladas se borran por completo. La deuda original ya volvió a pendiente al cancelarlo y no cambia.`
+          : undefined
+      }
+      pie={
+        <>
+          <Button variante="secundario" onClick={onCerrar}>
+            Volver
+          </Button>
+          <Button
+            variante="peligro"
+            cargando={eliminar.isPending}
+            onClick={() =>
+              plan &&
+              eliminar.mutate(plan.id, {
+                onSuccess: () => {
+                  toast.success('Plan eliminado');
+                  onEliminado();
+                },
+                onError: (e) => toast.error(e.message),
+              })
+            }
+          >
+            Eliminar
+          </Button>
+        </>
+      }
+    />
   );
 }

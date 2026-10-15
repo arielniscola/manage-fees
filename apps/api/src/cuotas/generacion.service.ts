@@ -40,7 +40,11 @@ const PERIODICIDAD_SIN_TARIFA: Periodicidad = 'MENSUAL';
 const DIA_VENCIMIENTO_SIN_TARIFA = 10;
 
 interface Alcance {
-  /** Mes desde el que se cobran también los períodos anteriores a la primera asignación de cada parcela. */
+  /**
+   * Mes desde el que se cobran también los períodos anteriores a la primera asignación de
+   * cada parcela. Con un socio, los de su propia primera asignación, aunque la parcela haya
+   * tenido otro titular antes.
+   */
   desde?: string;
   loteoId?: number;
   /** Solo las cuotas a nombre de este socio. */
@@ -89,6 +93,7 @@ export class GeneracionService {
         cuotas: 0,
         importe: 0,
         socios: 0,
+        reemplazadas: 0,
         yaExistian: 0,
         sinTarifa: true,
         parcelasSinImporte: 0,
@@ -96,11 +101,21 @@ export class GeneracionService {
     }
 
     const existentes = await this.clavesExistentes(candidatas, this.prisma);
+    // Pedir «cobrar desde» para un socio es explícito: la cuota anulada del titular anterior
+    // no le impide tener la suya. La corrida general sí la respeta.
+    const reemplazables = socioId && desde ? await this.anuladasDeOtros(candidatas, socioId) : new Map<string, number>();
+    for (const k of reemplazables.keys()) existentes.delete(k);
     const nuevas = candidatas.filter((c) => !existentes.has(clave(c)));
+    const reemplazadas = nuevas.flatMap((c) => reemplazables.get(clave(c)) ?? []);
 
     if (!simular && nuevas.length > 0) {
-      const { count } = await this.prisma.cuota.createMany({ data: nuevas, skipDuplicates: true });
-      this.log.log(`Generadas ${count} cuotas hasta ${hasta}`);
+      const count = await this.prisma.$transaction(async (tx) => {
+        if (reemplazadas.length) {
+          await tx.cuota.deleteMany({ where: { id: { in: reemplazadas }, estado: 'ANULADA' } });
+        }
+        return (await tx.cuota.createMany({ data: nuevas, skipDuplicates: true })).count;
+      });
+      this.log.log(`Generadas ${count} cuotas hasta ${hasta}${reemplazadas.length ? `, reemplazando ${reemplazadas.length} anuladas` : ''}`);
     }
 
     return {
@@ -110,6 +125,7 @@ export class GeneracionService {
       cuotas: nuevas.length,
       importe: nuevas.reduce((t, c) => t + c.importe, 0),
       socios: new Set(nuevas.map((c) => c.socioId)).size,
+      reemplazadas: reemplazadas.length,
       yaExistian: candidatas.length - nuevas.length,
       sinTarifa: false,
       parcelasSinImporte,
@@ -161,8 +177,8 @@ export class GeneracionService {
       where: {
         // Retrotrayendo, también cuenta la parcela asignada después de `hasta`: sus meses previos se cobran.
         ...(!desde && { desde: { lte: aFecha(hasta) } }),
-        // Con un socio se traen todas las asignaciones de sus parcelas, no solo las suyas:
-        // retrotraer tiene que saber quién fue el primer titular de cada una.
+        // Con un socio se traen todas las asignaciones de sus parcelas, no solo las suyas: en
+        // el mes de una transferencia la cuota es de quien era titular cuando el período empezó.
         parcela: {
           ...(socioId && { asignaciones: { some: { socioId } } }),
           ...(loteoId && { sector: { loteoId } }),
@@ -182,7 +198,17 @@ export class GeneracionService {
       // la cuota queda a nombre de quien era titular cuando el período empezó.
       orderBy: [{ desde: 'asc' }, { id: 'asc' }],
     });
-    const asignaciones = desde ? retrotraer(encontradas, desde) : encontradas;
+    // Desde la ficha del socio, «cobrar desde» es un pedido explícito para él: se retrotraen
+    // sus parcelas aunque las haya recibido por transferencia. Si el titular anterior ya
+    // tiene la cuota de ese período, el índice por parcela y período la saltea.
+    const asignaciones = !desde
+      ? encontradas
+      : socioId
+        ? retrotraer(
+            encontradas.filter((a) => a.socioId === socioId),
+            desde,
+          )
+        : retrotraer(encontradas, desde);
 
     const deParcela = this.cuotasDeParcela(tarifas.PARCELA, asignaciones, limite);
     const candidatas = [...deParcela.candidatas, ...this.cuotasSociales(tarifas.SOCIO, asignaciones, limite)];
@@ -368,6 +394,27 @@ export class GeneracionService {
       ...deParcela.flatMap((c) => (c.parcelaId === null ? [] : [`PARCELA|${c.parcelaId}|${c.periodo}`])),
       ...sociales.map((c) => `SOCIO|${c.socioId}|${c.periodo}`),
     ]);
+  }
+
+  /**
+   * Las cuotas de parcela anuladas a nombre de otro socio que ocupan el lugar de alguna
+   * candidata, por clave. Las que figuran en un cobro o en un plan quedan: son historial.
+   */
+  private async anuladasDeOtros(candidatas: Candidata[], socioId: number): Promise<Map<string, number>> {
+    const deParcela = candidatas.filter((c) => c.origen === 'PARCELA' && c.parcelaId);
+    if (deParcela.length === 0) return new Map();
+    const anuladas = await this.prisma.cuota.findMany({
+      where: {
+        origen: 'PARCELA',
+        estado: 'ANULADA',
+        socioId: { not: socioId },
+        detallesCobro: { none: {} },
+        refinanciadaEn: { none: {} },
+        OR: deParcela.map((c) => ({ parcelaId: c.parcelaId, periodo: c.periodo })),
+      },
+      select: { id: true, parcelaId: true, periodo: true },
+    });
+    return new Map(anuladas.map((c) => [`PARCELA|${c.parcelaId}|${c.periodo}`, c.id]));
   }
 
   private resumirPorPeriodo(nuevas: Candidata[]): PeriodoGenerado[] {
