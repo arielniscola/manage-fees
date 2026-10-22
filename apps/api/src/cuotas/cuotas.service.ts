@@ -144,6 +144,25 @@ export class CuotasService {
     await this.prisma.cuota.delete({ where: { id } });
   }
 
+  /**
+   * Borra una cuota pagada del historial, para corregir una carga equivocada. Es solo para
+   * superadmins: no deja rastro. Únicamente las históricas, que no tienen cobro ni recibo;
+   * una pagada por el sistema se revierte anulando su cobro. Al borrarla el período queda
+   * libre y se puede volver a cargar, o la generación lo crea si sigue correspondiendo.
+   */
+  async eliminarHistoricaPagada(id: number): Promise<void> {
+    const cuota = await this.prisma.cuota.findUnique({
+      where: { id },
+      include: { _count: { select: { detallesCobro: true, refinanciadaEn: true } } },
+    });
+    if (!cuota) throw noEncontrado('No existe la cuota');
+    if (!cuota.historica) throw conflicto('No viene del historial: para revertir el pago hay que anular el cobro');
+    if (cuota.estado !== 'PAGADA') throw conflicto('No está pagada');
+    if (cuota._count.detallesCobro > 0) throw conflicto('Figura en un cobro: eliminá primero ese cobro');
+    if (cuota._count.refinanciadaEn > 0) throw conflicto('Figura en un plan de pago');
+    await this.prisma.cuota.delete({ where: { id } });
+  }
+
   private filtroEstado(estado: CuotaListar['estado'], hoyISO: string): Prisma.CuotaWhereInput {
     const vence = aFecha(hoyISO);
     switch (estado) {

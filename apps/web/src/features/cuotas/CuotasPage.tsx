@@ -22,7 +22,8 @@ import { Encabezado } from '@/layout/AppLayout';
 import { useLoteoActivo } from '@/layout/loteo-activo';
 import { fecha, nombreCompleto, plural } from '@/lib/formato';
 import { useDebounce, useFiltrosUrl } from '@/lib/hooks';
-import { useAnularCuota, useAnularCuotas, useCuotas, useEliminarCuotas } from './api';
+import { useYo } from '@/features/auth/api';
+import { useAnularCuota, useAnularCuotas, useCuotas, useEliminarCuotas, useEliminarHistoricas } from './api';
 import { BadgeCuota } from './estados';
 import { GenerarPeriodoDialog } from './GenerarPeriodoDialog';
 
@@ -43,9 +44,12 @@ export function CuotasPage() {
   const q = useDebounce(texto);
   const [generar, setGenerar] = useState(false);
   const [anulando, setAnulando] = useState<CuotaListItem | null>(null);
-  const [lote, setLote] = useState<'anular' | 'eliminar' | null>(null);
+  const [lote, setLote] = useState<'anular' | 'eliminar' | 'historicas' | null>(null);
   const anularLote = useAnularCuotas();
   const eliminarLote = useEliminarCuotas();
+  const eliminarHistoricas = useEliminarHistoricas();
+  const { data: usuario } = useYo();
+  const superadmin = usuario?.rol === 'SUPERADMIN';
 
   useEffect(() => {
     if (q !== filtros.q) filtros.actualizar({ q });
@@ -68,12 +72,15 @@ export function CuotasPage() {
   const [verFechas, setVerFechas] = useState(porFecha);
   const filtrando = !!filtros.q || filtros.estado !== 'todas' || origen !== 'todos' || porFecha;
 
-  // Las impagas se pueden anular y las anuladas, borrar; las pagadas y refinanciadas, nada.
+  // Las impagas se pueden anular y las anuladas, borrar; las refinanciadas, nada. Las pagadas
+  // tampoco, salvo las del historial para un superadmin, que las puede borrar si se cargaron mal.
   const seleccion = useSeleccion<CuotaListItem>({ q: filtros.q, estado: filtros.estado, origen, periodo, venceDesde, venceHasta, loteoId });
+  const elegible = (c: CuotaListItem) => seAnula(c) || c.estado === 'anulada' || (superadmin && esHistoricaPagada(c));
   const elegibles = data?.items.filter(elegible) ?? [];
   const paraAnular = seleccion.elegidos.filter(seAnula);
   const paraEliminar = seleccion.elegidos.filter((c) => c.estado === 'anulada');
-  const enLote = lote === 'anular' ? paraAnular : paraEliminar;
+  const paraHistoricas = superadmin ? seleccion.elegidos.filter(esHistoricaPagada) : [];
+  const enLote = lote === 'anular' ? paraAnular : lote === 'historicas' ? paraHistoricas : paraEliminar;
 
   return (
     <>
@@ -215,6 +222,11 @@ export function CuotasPage() {
                   <Trash2 /> Eliminar {plural(paraEliminar.length, 'anulada')}
                 </Button>
               )}
+              {paraHistoricas.length > 0 && (
+                <Button variante="peligro" tamanio="sm" onClick={() => setLote('historicas')}>
+                  <Trash2 /> Eliminar {plural(paraHistoricas.length, 'pagada del historial', 'pagadas del historial')}
+                </Button>
+              )}
             </BarraLote>
             <Tabla>
               <thead>
@@ -236,7 +248,10 @@ export function CuotasPage() {
                   data.items.map((c) => (
                     <tr key={c.id} className="hover:bg-superficie-2">
                       <CasillaFila item={c} seleccion={seleccion} etiqueta={`la cuota ${c.etiqueta}`} deshabilitada={!elegible(c)} />
-                      <Td className="whitespace-nowrap font-medium first-letter:uppercase">{c.etiqueta}</Td>
+                      <Td className="whitespace-nowrap font-medium first-letter:uppercase">
+                        {c.etiqueta}
+                        {c.historica && <span className="ml-1.5 text-xs font-normal normal-case text-tenue">(historial)</span>}
+                      </Td>
                       <Td>
                         <Link to={`/socios/${c.socio.id}`} className="font-medium text-tinta hover:underline">
                           {nombreCompleto(c.socio)}
@@ -294,18 +309,21 @@ export function CuotasPage() {
       <AccionLoteDialog
         abierto={lote !== null}
         onAbiertoChange={(v) => !v && setLote(null)}
-        titulo={lote === 'anular' ? 'Anular cuotas' : 'Eliminar cuotas anuladas'}
+        titulo={lote === 'anular' ? 'Anular cuotas' : lote === 'historicas' ? 'Eliminar cuotas pagadas del historial' : 'Eliminar cuotas anuladas'}
         descripcion={
           lote === 'anular'
             ? `${plural(enLote.length, 'cuota impaga', 'cuotas impagas')}, ${pesos(enLote.reduce((t, c) => t + c.importe, 0))}. Dejan de contar en la deuda y la generación no las vuelve a crear.`
-            : `Se borran ${plural(enLote.length, 'cuota anulada', 'cuotas anuladas')} y no se puede deshacer. Ojo: si el período todavía corresponde, la próxima generación lo vuelve a crear, porque la cuota anulada era la que lo impedía.`
+            : lote === 'historicas'
+              ? `Se borran ${plural(enLote.length, 'cuota pagada', 'cuotas pagadas')} del historial, ${pesos(enLote.reduce((t, c) => t + c.importe, 0))}, y no se puede deshacer. El período queda libre: se puede volver a cargar bien y, si todavía corresponde, la próxima generación lo crea como impago.`
+              : `Se borran ${plural(enLote.length, 'cuota anulada', 'cuotas anuladas')} y no se puede deshacer. Ojo: si el período todavía corresponde, la próxima generación lo vuelve a crear, porque la cuota anulada era la que lo impedía.`
         }
         confirmar={lote === 'anular' ? `Anular ${plural(enLote.length, 'cuota')}` : `Eliminar ${plural(enLote.length, 'cuota')}`}
         conMotivo={lote === 'anular'}
-        cargando={anularLote.isPending || eliminarLote.isPending}
+        cargando={anularLote.isPending || eliminarLote.isPending || eliminarHistoricas.isPending}
         onConfirmar={(motivo) => {
           const ids = enLote.map((c) => c.id);
-          return lote === 'anular' ? anularLote.mutateAsync({ ids, motivo: motivo! }) : eliminarLote.mutateAsync(ids);
+          if (lote === 'anular') return anularLote.mutateAsync({ ids, motivo: motivo! });
+          return lote === 'historicas' ? eliminarHistoricas.mutateAsync(ids) : eliminarLote.mutateAsync(ids);
         }}
         etiquetaDe={(id) => {
           const c = seleccion.elegidos.find((e) => e.id === id);
@@ -319,7 +337,7 @@ export function CuotasPage() {
 }
 
 const seAnula = (c: CuotaListItem) => c.estado === 'pendiente' || c.estado === 'vencida';
-const elegible = (c: CuotaListItem) => seAnula(c) || c.estado === 'anulada';
+const esHistoricaPagada = (c: CuotaListItem) => c.historica && c.estado === 'pagada';
 
 const valorValido = (valor: string | null, formato: RegExp): string | undefined =>
   valor && formato.test(valor) ? valor : undefined;

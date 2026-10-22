@@ -310,8 +310,8 @@ function TarifaFormDialog({
     formState: { errors },
   } = useForm<TarifaCrearInput, unknown, TarifaCrear>({ resolver: zodResolver(tarifaCrearSchema) });
 
-  // Una tarifa nueva no puede pisar períodos ya generados: el mes que se sugiere es el
-  // siguiente al de la última tarifa, o el mes actual si es la primera.
+  // El mes que se sugiere es el siguiente al de la última tarifa, o el mes actual si es la
+  // primera. Se puede elegir uno anterior: los períodos ya generados mantienen su cuota.
   const sugerido = tarifas.length > 0 ? mayor(sumarMeses(tarifas[0].vigenteDesde, 1), mesActual()) : mesActual();
 
   useEffect(() => {
@@ -403,9 +403,10 @@ function TarifaFormDialog({
         </div>
         {esMes(vigenteDesde) && diaVencimiento >= 1 && diaVencimiento <= 31 && (
           <p className="rounded-control bg-superficie-2 px-4 py-3 text-[13px] text-tenue">
-            La primera cuota con esta tarifa será la del período{' '}
+            Rige desde el período{' '}
             <span className="font-medium text-tinta first-letter:uppercase">{etiquetaPeriodo(vigenteDesde, watch('periodicidad') ?? 'MENSUAL')}</span>, con
-            vencimiento el {fecha(vencimientoDe(vigenteDesde, diaVencimiento))}.
+            vencimiento el {fecha(vencimientoDe(vigenteDesde, diaVencimiento))}. Los períodos que ya tengan cuota generada la
+            mantienen con su importe: la tarifa solo valoriza los que falten.
           </p>
         )}
       </form>

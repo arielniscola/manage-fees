@@ -17,6 +17,7 @@ import {
   type TarifaCrear,
   type TarifaListar,
 } from '@mf/shared';
+import { Roles } from '../auth/decorators';
 import { enLote } from '../common/lote';
 import { ZodPipe } from '../common/zod.pipe';
 import { CuotasService } from './cuotas.service';
@@ -92,6 +93,14 @@ export class CuotasController {
   @HttpCode(200)
   eliminarLote(@Body(new ZodPipe(loteSchema)) { ids }: Lote) {
     return enLote(ids, (id) => this.cuotas.eliminar(id));
+  }
+
+  /** Borra cuotas pagadas cargadas por error en el historial. Las que no lo son se saltean. */
+  @Post('eliminar-historicas')
+  @Roles('SUPERADMIN')
+  @HttpCode(200)
+  eliminarHistoricasLote(@Body(new ZodPipe(loteSchema)) { ids }: Lote) {
+    return enLote(ids, (id) => this.cuotas.eliminarHistoricaPagada(id));
   }
 
   @Post(':id/anular')

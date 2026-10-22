@@ -95,6 +95,15 @@ export function useEliminarCuotas() {
   });
 }
 
+/** Borra cuotas pagadas del historial. Solo superadmins. */
+export function useEliminarHistoricas() {
+  const invalidar = useInvalidar();
+  return useMutation({
+    mutationFn: (ids: number[]) => api.post<ResultadoLote>('/cuotas/eliminar-historicas', { ids }),
+    onSuccess: invalidar,
+  });
+}
+
 /** Vista previa de la generación: no escribe nada, solo cuenta qué falta. */
 export function useVistaPreviaGeneracion(filtros: Omit<GenerarCuotasInput, 'simular'>, habilitada: boolean) {
   return useQuery({
