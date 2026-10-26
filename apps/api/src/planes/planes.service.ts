@@ -24,7 +24,7 @@ import { InteresService } from '../configuracion/interes.service';
 import { PrismaService } from '../prisma/prisma.module';
 
 const completo = {
-  socio: { select: { id: true, numero: true, nombre: true, apellido: true } },
+  socio: { select: { id: true, numero: true, nombre: true, apellido: true, dni: true } },
   usuario: { select: { nombre: true } },
   cuotas: { orderBy: { numeroEnPlan: 'asc' } },
   origenes: {

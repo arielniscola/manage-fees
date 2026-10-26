@@ -26,7 +26,7 @@ const NOMBRE_CLUB = process.env.CLUB_NOMBRE || 'Cooperativa';
 const MAX_CUOTAS_POR_COBRO = 120;
 
 const completo = {
-  socio: { select: { id: true, numero: true, nombre: true, apellido: true } },
+  socio: { select: { id: true, numero: true, nombre: true, apellido: true, dni: true } },
   usuario: { select: { nombre: true } },
   anuladoPor: { select: { nombre: true } },
   recibo: { select: { numero: true } },

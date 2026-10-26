@@ -106,7 +106,7 @@ export interface CobroListItem {
   medio: MedioPago;
   total: number;
   observaciones: string | null;
-  socio: SocioResumen;
+  socio: SocioResumen & { dni: string };
   /** Número del recibo emitido por este cobro. */
   numeroRecibo: number;
   cantidadCuotas: number;

@@ -148,7 +148,7 @@ export interface PlanListItem {
   id: number;
   numero: number;
   fecha: string;
-  socio: SocioResumen;
+  socio: SocioResumen & { dni: string };
   deudaTotal: number;
   anticipo: number;
   financiado: number;
