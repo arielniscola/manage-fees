@@ -38,6 +38,30 @@ type PlanCompleto = Prisma.PlanPagoGetPayload<{ include: typeof completo }>;
 const diasEntre = (desde: string, hasta: string): number =>
   Math.round((Date.parse(`${hasta}T00:00:00Z`) - Date.parse(`${desde}T00:00:00Z`)) / 86_400_000);
 
+/** Los planes sin próximo vencimiento —pagados o cancelados— van siempre al final. */
+function compararPlanes(orden: NonNullable<PlanListar['orden']>, dir: PlanListar['dir'] = 'asc') {
+  const signo = dir === 'asc' ? 1 : -1;
+  return (a: PlanListItem, b: PlanListItem): number => {
+    switch (orden) {
+      case 'plan':
+        return signo * (a.numero - b.numero);
+      case 'fecha':
+        return signo * a.fecha.localeCompare(b.fecha);
+      case 'socio':
+        return signo * `${a.socio.apellido} ${a.socio.nombre}`.localeCompare(`${b.socio.apellido} ${b.socio.nombre}`, 'es');
+      case 'deuda':
+        return signo * (a.deudaTotal - b.deudaTotal);
+      case 'saldo':
+        return signo * (a.saldo - b.saldo);
+      case 'proximo':
+        if (a.proximoVencimiento === b.proximoVencimiento) return 0;
+        if (!a.proximoVencimiento) return 1;
+        if (!b.proximoVencimiento) return -1;
+        return signo * a.proximoVencimiento.localeCompare(b.proximoVencimiento);
+    }
+  };
+}
+
 @Injectable()
 export class PlanesService {
   constructor(
@@ -45,7 +69,7 @@ export class PlanesService {
     private readonly interes: InteresService,
   ) {}
 
-  async listar({ q, socioId, estado, loteoId, page, pageSize }: PlanListar): Promise<Paginado<PlanListItem>> {
+  async listar({ q, socioId, estado, loteoId, page, pageSize, orden, dir }: PlanListar): Promise<Paginado<PlanListItem>> {
     const where: Prisma.PlanPagoWhereInput = {
       ...(socioId && { socioId }),
       // Cancelado sí se guarda; el resto de los estados se calculan y se filtran después.
@@ -65,6 +89,8 @@ export class PlanesService {
     const items = planes
       .map((p) => this.aListItem(p, hoyISO))
       .filter((p) => estado === 'todos' || p.estado === estado);
+    // Llegan por fecha descendente: sort es estable, así que los empates conservan ese orden.
+    if (orden) items.sort(compararPlanes(orden, dir));
 
     return {
       items: items.slice((page - 1) * pageSize, page * pageSize),

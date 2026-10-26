@@ -2,38 +2,42 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link } from 'react-router';
-import { Ban, CalendarDays, PlayCircle, Search, Settings2, Trash2 } from 'lucide-react';
+import { Ban, CalendarDays, PlayCircle, Search, Settings2, Trash2, Wallet } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   cuotaAnularSchema,
+  ORDEN_CUOTAS,
   ORIGENES_CUOTA,
   pesos,
   type CuotaAnularInput,
   type CuotaListItem,
   type EstadoCuotaVisible,
   type OrigenCuota,
+  type SocioResumen,
 } from '@mf/shared';
 import { Button } from '@/components/ui/button';
-import { Card, Chips, ErrorCarga, FilasCargando, Paginacion, Tabla, Td, Th, Vacio } from '@/components/ui/display';
+import { Card, Chips, ErrorCarga, FilasCargando, Paginacion, Tabla, Td, Th, ThOrden, Vacio } from '@/components/ui/display';
 import { Dialog } from '@/components/ui/dialog';
 import { Field, Input, Textarea } from '@/components/ui/field';
 import { AccionLoteDialog, BarraLote, CasillaFila, CasillaTodas, useSeleccion } from '@/components/ui/lotes';
 import { Encabezado } from '@/layout/AppLayout';
 import { useLoteoActivo } from '@/layout/loteo-activo';
 import { fecha, nombreCompleto, plural } from '@/lib/formato';
-import { useDebounce, useFiltrosUrl } from '@/lib/hooks';
+import { useDebounce, useFiltrosUrl, useOrdenUrl } from '@/lib/hooks';
 import { useYo } from '@/features/auth/api';
+import { RegistrarPagoDialog } from '@/features/cobros/RegistrarPagoDialog';
 import { useAnularCuota, useAnularCuotas, useCuotas, useEliminarCuotas, useEliminarHistoricas } from './api';
 import { BadgeCuota } from './estados';
 import { GenerarPeriodoDialog } from './GenerarPeriodoDialog';
 
-type EstadoFiltro = EstadoCuotaVisible | 'todas';
+type EstadoFiltro = EstadoCuotaVisible | 'impaga' | 'todas';
 type OrigenFiltro = OrigenCuota | 'todos';
 const PAGE_SIZE = 25;
 
 export function CuotasPage() {
   const { loteoId } = useLoteoActivo();
   const filtros = useFiltrosUrl<EstadoFiltro>('todas', loteoId);
+  const orden = useOrdenUrl(filtros, ORDEN_CUOTAS, { columna: 'periodo', dir: 'desc' });
   const origenUrl = filtros.params.get('origen') as OrigenCuota | null;
   const origen: OrigenFiltro = origenUrl && ORIGENES_CUOTA.includes(origenUrl) ? origenUrl : 'todos';
   // Solo se mandan los valores completos: un input a medio escribir no filtra.
@@ -44,6 +48,8 @@ export function CuotasPage() {
   const q = useDebounce(texto);
   const [generar, setGenerar] = useState(false);
   const [anulando, setAnulando] = useState<CuotaListItem | null>(null);
+  // El socio se conserva al cerrar, para que el diálogo no cambie de contenido mientras se va.
+  const [cobro, setCobro] = useState<{ abierto: boolean; socio: SocioResumen | null }>({ abierto: false, socio: null });
   const [lote, setLote] = useState<'anular' | 'eliminar' | 'historicas' | null>(null);
   const anularLote = useAnularCuotas();
   const eliminarLote = useEliminarCuotas();
@@ -65,6 +71,7 @@ export function CuotasPage() {
     loteoId,
     page: filtros.page,
     pageSize: PAGE_SIZE,
+    ...orden.query,
   });
 
   const porFecha = !!periodo || !!venceDesde || !!venceHasta;
@@ -121,6 +128,7 @@ export function CuotasPage() {
           onChange={(estado) => filtros.actualizar({ estado })}
           opciones={[
             { valor: 'todas', label: 'Todas' },
+            { valor: 'impaga', label: 'Impagas' },
             { valor: 'vencida', label: 'Vencidas' },
             { valor: 'pendiente', label: 'Por vencer' },
             { valor: 'pagada', label: 'Pagadas' },
@@ -232,13 +240,23 @@ export function CuotasPage() {
               <thead>
                 <tr>
                   <CasillaTodas items={elegibles} seleccion={seleccion} />
-                  <Th>Período</Th>
-                  <Th>Socio</Th>
-                  <Th>Parcela</Th>
-                  <Th>Vence</Th>
-                  <Th className="text-right">Importe</Th>
+                  <ThOrden orden={orden} columna="periodo" primero="desc">
+                    Período
+                  </ThOrden>
+                  <ThOrden orden={orden} columna="socio">
+                    Socio
+                  </ThOrden>
+                  <ThOrden orden={orden} columna="parcela">
+                    Parcela
+                  </ThOrden>
+                  <ThOrden orden={orden} columna="vencimiento">
+                    Vence
+                  </ThOrden>
+                  <ThOrden orden={orden} columna="importe" primero="desc" className="text-right">
+                    Importe
+                  </ThOrden>
                   <Th>Estado</Th>
-                  <Th className="w-10" />
+                  <Th />
                 </tr>
               </thead>
               <tbody>
@@ -281,15 +299,25 @@ export function CuotasPage() {
                       </Td>
                       <Td className="text-right">
                         {(c.estado === 'pendiente' || c.estado === 'vencida') && (
-                          <button
-                            type="button"
-                            title={`Anular la cuota ${c.etiqueta}`}
-                            aria-label={`Anular la cuota ${c.etiqueta}`}
-                            onClick={() => setAnulando(c)}
-                            className="inline-flex size-9 items-center justify-center rounded-lg text-tenue transition-colors hover:bg-mor-fondo hover:text-mor [&_svg]:size-4"
-                          >
-                            <Ban />
-                          </button>
+                          <div className="flex items-center justify-end gap-1">
+                            <Button
+                              variante="terciario"
+                              tamanio="sm"
+                              title={`Cobrar a ${nombreCompleto(c.socio)}`}
+                              onClick={() => setCobro({ abierto: true, socio: c.socio })}
+                            >
+                              <Wallet /> Cobrar
+                            </Button>
+                            <button
+                              type="button"
+                              title={`Anular la cuota ${c.etiqueta}`}
+                              aria-label={`Anular la cuota ${c.etiqueta}`}
+                              onClick={() => setAnulando(c)}
+                              className="inline-flex size-9 items-center justify-center rounded-lg text-tenue transition-colors hover:bg-mor-fondo hover:text-mor [&_svg]:size-4"
+                            >
+                              <Ban />
+                            </button>
+                          </div>
                         )}
                       </Td>
                     </tr>
@@ -306,6 +334,7 @@ export function CuotasPage() {
 
       <GenerarPeriodoDialog abierto={generar} onAbiertoChange={setGenerar} />
       <AnularCuotaDialog cuota={anulando} onCerrar={() => setAnulando(null)} />
+      <RegistrarPagoDialog abierto={cobro.abierto} onAbiertoChange={(abierto) => setCobro((v) => ({ ...v, abierto }))} socio={cobro.socio} />
       <AccionLoteDialog
         abierto={lote !== null}
         onAbiertoChange={(v) => !v && setLote(null)}

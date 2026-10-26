@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { fechaSchema, hoy, paginacionSchema, textoOpcional } from './common';
+import { fechaSchema, hoy, ordenSchema, paginacionSchema, textoOpcional } from './common';
 import { aCentavos, importeOpcionalSchema, importeSchema } from './dinero';
 import { morasSchema } from './interes';
 import { TOLERANCIA_VENCIDAS } from './planes';
@@ -174,7 +174,11 @@ export function etiquetaParcela(parcela: { codigo: string; sector: SectorResumen
 export const ESTADOS_PARCELA = ['libre', 'asignada'] as const;
 export type EstadoParcela = (typeof ESTADOS_PARCELA)[number];
 
+export const ORDEN_PARCELAS = ['codigo', 'ubicacion', 'superficie'] as const;
+export type OrdenParcelas = (typeof ORDEN_PARCELAS)[number];
+
 export const parcelaListarSchema = paginacionSchema.extend({
+  ...ordenSchema(ORDEN_PARCELAS),
   q: z.string().trim().optional(),
   estado: z.enum(['libre', 'asignada', 'todas']).default('todas'),
   sectorId: z.coerce.number().int().positive().optional(),

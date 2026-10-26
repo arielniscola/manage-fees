@@ -1,11 +1,14 @@
 import { useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
-import { Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react';
+import { Pencil, Plus, RotateCcw, Trash2, Wallet } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   ETIQUETA_ESTADO_CIVIL,
+  ETIQUETA_ESTADO_PLAN,
+  ETIQUETA_MEDIO_PAGO,
   ETIQUETA_TIPO_SOCIO,
   formatearCuit,
+  numeroPlan,
   pesos,
   type AsignacionDeSocio,
   type SocioDetalle,
@@ -14,7 +17,11 @@ import { Button } from '@/components/ui/button';
 import { Avatar, Badge, Card, CardHeader, ErrorCarga, Tabla, Td, Th, Vacio } from '@/components/ui/display';
 import { Encabezado } from '@/layout/AppLayout';
 import { dni, fecha, iniciales, mesAnio, nombreCompleto, plural } from '@/lib/formato';
+import { useCobrosDeSocio } from '@/features/cobros/api';
 import { HistorialDePagos } from '@/features/cobros/HistorialDePagos';
+import { RegistrarPagoDialog } from '@/features/cobros/RegistrarPagoDialog';
+import { useCuotasDeSocio } from '@/features/cuotas/api';
+import { usePlanesDeSocio } from '@/features/planes/api';
 import { PlanesDelSocio } from '@/features/planes/PlanesDelSocio';
 import { CuotasDelSocio } from '@/features/cuotas/CuotasDelSocio';
 import { GenerarPeriodoDialog } from '@/features/cuotas/GenerarPeriodoDialog';
@@ -45,38 +52,7 @@ export function SocioDetallePage() {
         acciones={<AccionesSocio socio={socio} onEditar={() => navigate(`/socios/${socio.id}/editar`)} />}
       />
 
-      <Card className="flex flex-wrap items-center gap-5 px-7 py-6">
-        <Avatar texto={iniciales(socio)} tamanio={64} />
-        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="font-serif text-[26px] font-medium">{nombreCompleto(socio)}</span>
-            {socio.estado === 'activo' ? <Badge tono="ok">Activo</Badge> : <Badge tono="baja">Baja</Badge>}
-            {socio.tipo === 'SUPLENTE' && <Badge tono="pend">{ETIQUETA_TIPO_SOCIO.SUPLENTE}</Badge>}
-          </div>
-          <span className="text-sm tabular text-tenue">
-            N° {socio.numero} · Socio desde {mesAnio(socio.fechaAlta)}
-            {socio.fechaBaja && ` · Baja el ${fecha(socio.fechaBaja)}${socio.motivoBaja ? ` (${socio.motivoBaja})` : ''}`}
-          </span>
-        </div>
-        <div className="flex items-start gap-8 pr-2">
-          <div className="flex flex-col items-end gap-0.5">
-            <span className="text-xs font-semibold uppercase tracking-[0.06em] text-tenue">Parcelas vigentes</span>
-            <span className="font-serif text-[30px] font-medium tabular">{socio.parcelas.length}</span>
-          </div>
-          <div className="flex flex-col items-end gap-0.5">
-            <span className="text-xs font-semibold uppercase tracking-[0.06em] text-tenue">Deuda</span>
-            <span className={`font-serif text-[30px] font-medium tabular ${socio.estadoCuenta.deuda > 0 ? 'text-mor' : ''}`}>
-              {pesos(socio.estadoCuenta.deuda)}
-            </span>
-            {socio.estadoCuenta.pendientes > 0 && (
-              <span className="text-xs text-tenue">
-                {plural(socio.estadoCuenta.pendientes, 'cuota pendiente', 'cuotas pendientes')}
-                {socio.estadoCuenta.vencidas > 0 && `, ${socio.estadoCuenta.vencidas} vencida${socio.estadoCuenta.vencidas === 1 ? '' : 's'}`}
-              </span>
-            )}
-          </div>
-        </div>
-      </Card>
+      <ResumenSocio socio={socio} />
 
       <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
         <Card className="flex flex-col gap-5 px-7 py-6">
@@ -114,6 +90,101 @@ export function SocioDetallePage() {
 
       <HistorialDePagos socio={socio} />
     </>
+  );
+}
+
+/**
+ * Cabecera de la ficha: quién es y cómo está su cuenta de un vistazo, con el cobro a mano.
+ * Usa las mismas consultas que las secciones de abajo, así que no suma pedidos.
+ */
+function ResumenSocio({ socio }: { socio: SocioDetalle }) {
+  const [registrando, setRegistrando] = useState(false);
+  const { data: cuotas } = useCuotasDeSocio(socio.id);
+  const { data: cobros } = useCobrosDeSocio(socio.id);
+  const { data: planes } = usePlanesDeSocio(socio.id);
+  const cuenta = socio.estadoCuenta;
+
+  // Las vencidas ya cuentan en la deuda: el próximo vencimiento es lo que todavía no venció.
+  const proxima = cuotas
+    ?.filter((c) => c.estado === 'pendiente')
+    .reduce<(typeof cuotas)[number] | undefined>((min, c) => (!min || c.vencimiento < min.vencimiento ? c : min), undefined);
+  const ultimoPago = cobros?.find((c) => !c.anulado);
+  // Incumplido también se muestra: es el plan que más importa seguir.
+  const plan = planes?.find((p) => p.estado === 'vigente' || p.estado === 'incumplido');
+
+  return (
+    <Card>
+      <div className="flex flex-wrap items-center gap-5 px-7 py-6">
+        <Avatar texto={iniciales(socio)} tamanio={64} />
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="font-serif text-[26px] font-medium">{nombreCompleto(socio)}</span>
+            {socio.estado === 'activo' ? <Badge tono="ok">Activo</Badge> : <Badge tono="baja">Baja</Badge>}
+            {socio.tipo === 'SUPLENTE' && <Badge tono="pend">{ETIQUETA_TIPO_SOCIO.SUPLENTE}</Badge>}
+          </div>
+          <span className="text-sm tabular text-tenue">
+            N° {socio.numero} · Socio desde {mesAnio(socio.fechaAlta)}
+            {socio.fechaBaja && ` · Baja el ${fecha(socio.fechaBaja)}${socio.motivoBaja ? ` (${socio.motivoBaja})` : ''}`}
+          </span>
+        </div>
+        {socio.estado === 'activo' && (
+          <Button onClick={() => setRegistrando(true)}>
+            <Wallet /> Registrar pago
+          </Button>
+        )}
+      </div>
+
+      <dl className="grid grid-cols-2 gap-x-6 gap-y-5 border-t border-borde px-7 py-5 sm:grid-cols-3 xl:grid-cols-5">
+        <Indicador
+          etiqueta="Deuda"
+          valor={pesos(cuenta.deuda)}
+          tono={cuenta.deudaVencida > 0 ? 'mor' : undefined}
+          detalle={
+            cuenta.pendientes === 0
+              ? 'Al día'
+              : cuenta.vencidas > 0
+                ? `${pesos(cuenta.deudaVencida)} vencidos · ${plural(cuenta.vencidas, 'cuota', 'cuotas')}`
+                : plural(cuenta.pendientes, 'cuota por vencer', 'cuotas por vencer')
+          }
+        />
+        <Indicador
+          etiqueta="Próximo vencimiento"
+          valor={cuotas ? (proxima ? fecha(proxima.vencimiento) : '—') : undefined}
+          detalle={proxima ? `${pesos(proxima.importe)} · ${proxima.etiqueta}` : cuotas && 'Nada por vencer'}
+        />
+        <Indicador
+          etiqueta="Último pago"
+          valor={cobros ? (ultimoPago ? fecha(ultimoPago.fecha) : '—') : undefined}
+          detalle={ultimoPago ? `${pesos(ultimoPago.total)} · ${ETIQUETA_MEDIO_PAGO[ultimoPago.medio]}` : cobros && 'Sin pagos registrados'}
+        />
+        <Indicador
+          etiqueta="Plan de pago"
+          valor={planes ? (plan ? `Plan ${numeroPlan(plan.numero)}` : '—') : undefined}
+          tono={plan?.estado === 'incumplido' ? 'mor' : undefined}
+          detalle={plan ? `${ETIQUETA_ESTADO_PLAN[plan.estado]} · saldo ${pesos(plan.saldo)}` : planes && 'Sin plan activo'}
+        />
+        <Indicador
+          etiqueta="Parcelas vigentes"
+          valor={String(socio.parcelas.length)}
+          detalle={socio.parcelas.map((p) => p.etiqueta).join(', ') || (socio.tipo === 'SUPLENTE' ? 'En lista de espera' : 'Sin parcelas')}
+        />
+      </dl>
+
+      <RegistrarPagoDialog abierto={registrando} onAbiertoChange={setRegistrando} socio={socio} />
+    </Card>
+  );
+}
+
+/** Un dato del resumen. Sin `valor` todavía está cargando. */
+function Indicador({ etiqueta, valor, detalle, tono }: { etiqueta: string; valor?: string; detalle?: ReactNode; tono?: 'mor' }) {
+  return (
+    <div className="flex min-w-0 flex-col gap-0.5">
+      <dt className="text-xs font-semibold uppercase tracking-[0.06em] text-tenue">{etiqueta}</dt>
+      <dd className={`font-serif text-[22px] font-medium tabular ${tono === 'mor' ? 'text-mor' : ''}`}>
+        {valor ?? <span className="inline-block h-6 w-24 animate-pulse rounded bg-superficie-2 align-middle" />}
+      </dd>
+      {detalle && <dd className="truncate text-xs text-tenue">{detalle}</dd>}
+    </div>
   );
 }
 

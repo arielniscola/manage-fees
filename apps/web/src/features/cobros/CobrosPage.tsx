@@ -1,14 +1,24 @@
 import { useEffect, useState } from 'react';
-import { Ban, FileText, Plus, Search, Trash2 } from 'lucide-react';
-import { ETIQUETA_MEDIO_PAGO, numeroRecibo, pesos, type CobroListItem } from '@mf/shared';
+import { Ban, CalendarDays, FileText, Plus, Search, Trash2 } from 'lucide-react';
+import {
+  ETIQUETA_MEDIO_PAGO,
+  MEDIOS_PAGO,
+  ORDEN_COBROS,
+  hoy,
+  inicioDelMes,
+  numeroRecibo,
+  pesos,
+  type CobroListItem,
+  type MedioPago,
+} from '@mf/shared';
 import { Button } from '@/components/ui/button';
-import { Card, Chips, ErrorCarga, FilasCargando, Paginacion, Tabla, Td, Th, Vacio } from '@/components/ui/display';
-import { Input } from '@/components/ui/field';
+import { Card, Chips, ErrorCarga, FilasCargando, Paginacion, Tabla, Td, Th, ThOrden, Vacio } from '@/components/ui/display';
+import { Field, Input, Select } from '@/components/ui/field';
 import { AccionLoteDialog, BarraLote, CasillaFila, CasillaTodas, useSeleccion } from '@/components/ui/lotes';
 import { Encabezado } from '@/layout/AppLayout';
 import { useLoteoActivo } from '@/layout/loteo-activo';
 import { fecha, nombreCompleto, plural } from '@/lib/formato';
-import { useDebounce, useFiltrosUrl } from '@/lib/hooks';
+import { useDebounce, useFiltrosUrl, useOrdenUrl } from '@/lib/hooks';
 import { urlRecibo, useAnularCobros, useCobros, useEliminarCobros } from './api';
 import { BadgeCobro, CobroDetalleDialog } from './CobroDetalleDialog';
 import { RegistrarPagoDialog } from './RegistrarPagoDialog';
@@ -19,6 +29,12 @@ const PAGE_SIZE = 25;
 export function CobrosPage() {
   const { loteoId } = useLoteoActivo();
   const filtros = useFiltrosUrl<EstadoFiltro>('vigentes', loteoId);
+  const orden = useOrdenUrl(filtros, ORDEN_COBROS, { columna: 'fecha', dir: 'desc' });
+  const medioUrl = filtros.params.get('medio') as MedioPago | null;
+  const medio = medioUrl && MEDIOS_PAGO.includes(medioUrl) ? medioUrl : undefined;
+  // Solo se mandan las fechas completas: un input a medio escribir no filtra.
+  const desde = valorValido(filtros.params.get('desde'));
+  const hasta = valorValido(filtros.params.get('hasta'));
   const [texto, setTexto] = useState(filtros.q);
   const q = useDebounce(texto);
   const [registrando, setRegistrando] = useState(false);
@@ -34,15 +50,23 @@ export function CobrosPage() {
   const { data, isPending, isError, error, refetch, isPlaceholderData } = useCobros({
     q: filtros.q || undefined,
     estado: filtros.estado,
+    medio,
+    desde,
+    hasta,
     loteoId,
     page: filtros.page,
     pageSize: PAGE_SIZE,
+    ...orden.query,
   });
 
-  const filtrando = !!filtros.q || filtros.estado !== 'vigentes';
+  const porFecha = !!desde || !!hasta;
+  // Con un filtro de fecha puesto (por ejemplo, al volver con la URL) arranca visible.
+  const [verFechas, setVerFechas] = useState(porFecha);
+  const filtrando = !!filtros.q || filtros.estado !== 'vigentes' || !!medio || porFecha;
+  const rango = (d: string, h: string) => filtros.actualizar({ desde: d, hasta: h });
 
   // Los vigentes se anulan; los anulados se pueden borrar.
-  const seleccion = useSeleccion<CobroListItem>({ q: filtros.q, estado: filtros.estado, loteoId });
+  const seleccion = useSeleccion<CobroListItem>({ q: filtros.q, estado: filtros.estado, medio, desde, hasta, loteoId });
   const paraAnular = seleccion.elegidos.filter((c) => !c.anulado);
   const paraEliminar = seleccion.elegidos.filter((c) => c.anulado);
   const enLote = lote === 'anular' ? paraAnular : paraEliminar;
@@ -72,24 +96,86 @@ export function CobrosPage() {
             aria-label="Buscar cobro"
           />
         </div>
-        <Chips
-          etiqueta="Estado"
-          valor={filtros.estado}
-          onChange={(estado) => filtros.actualizar({ estado })}
-          opciones={[
-            { valor: 'vigentes', label: 'Vigentes' },
-            { valor: 'anulados', label: 'Anulados' },
-            { valor: 'todos', label: 'Todos' },
-          ]}
-        />
+        {/* Estado y medio van juntos: al achicarse la pantalla bajan de línea los dos. */}
+        <div className="flex items-center gap-3">
+          <Chips
+            etiqueta="Estado"
+            valor={filtros.estado}
+            onChange={(estado) => filtros.actualizar({ estado })}
+            opciones={[
+              { valor: 'vigentes', label: 'Vigentes' },
+              { valor: 'anulados', label: 'Anulados' },
+              { valor: 'todos', label: 'Todos' },
+            ]}
+          />
+          {/* El ancho va en el contenedor: Select ya trae w-full y cn no resuelve el choque de clases. */}
+          <div className="w-[170px] shrink-0">
+            <Select
+              aria-label="Medio de pago"
+              value={medio ?? ''}
+              onChange={(e) => filtros.actualizar({ medio: e.target.value || undefined })}
+            >
+              <option value="">Todos los medios</option>
+              {MEDIOS_PAGO.map((m) => (
+                <option key={m} value={m}>
+                  {ETIQUETA_MEDIO_PAGO[m]}
+                </option>
+              ))}
+            </Select>
+          </div>
+        </div>
+        <Button
+          variante={verFechas || porFecha ? 'primario' : 'secundario'}
+          aria-expanded={verFechas}
+          aria-controls="filtros-fecha"
+          onClick={() => setVerFechas((v) => !v)}
+        >
+          <CalendarDays /> Fechas
+        </Button>
       </div>
+
+      {verFechas && (
+        <div id="filtros-fecha" className="flex flex-wrap items-end gap-3">
+          <Field label="Desde" htmlFor="filtro-desde" className="w-[180px]">
+            <Input
+              id="filtro-desde"
+              type="date"
+              value={filtros.params.get('desde') ?? ''}
+              max={hasta}
+              onChange={(e) => filtros.actualizar({ desde: e.target.value })}
+              className="tabular"
+            />
+          </Field>
+          <Field label="Hasta" htmlFor="filtro-hasta" className="w-[180px]">
+            <Input
+              id="filtro-hasta"
+              type="date"
+              value={filtros.params.get('hasta') ?? ''}
+              min={desde}
+              onChange={(e) => filtros.actualizar({ hasta: e.target.value })}
+              className="tabular"
+            />
+          </Field>
+          <Button variante="secundario" onClick={() => rango(hoy(), hoy())}>
+            Hoy
+          </Button>
+          <Button variante="secundario" onClick={() => rango(inicioDelMes(), hoy())}>
+            Este mes
+          </Button>
+          {porFecha && (
+            <Button variante="terciario" onClick={() => filtros.actualizar({ desde: undefined, hasta: undefined })}>
+              Limpiar fechas
+            </Button>
+          )}
+        </div>
+      )}
 
       <Card className={isPlaceholderData ? 'opacity-70 transition-opacity' : undefined}>
         {isError ? (
           <ErrorCarga mensaje={error.message} onReintentar={() => void refetch()} />
         ) : data && data.total === 0 ? (
           filtrando ? (
-            <Vacio titulo="No hay cobros que coincidan" descripcion="Probá con otro socio o número de recibo, o cambiá el filtro." />
+            <Vacio titulo="No hay cobros que coincidan" descripcion="Probá con otro socio o número de recibo, o cambiá los filtros." />
           ) : (
             <Vacio
               titulo="Todavía no hay cobros"
@@ -119,12 +205,22 @@ export function CobrosPage() {
               <thead>
                 <tr>
                   <CasillaTodas items={data?.items ?? []} seleccion={seleccion} />
-                  <Th>Recibo</Th>
-                  <Th>Fecha</Th>
-                  <Th>Socio</Th>
-                  <Th>Cuotas</Th>
+                  <ThOrden orden={orden} columna="recibo" primero="desc">
+                    Recibo
+                  </ThOrden>
+                  <ThOrden orden={orden} columna="fecha" primero="desc">
+                    Fecha
+                  </ThOrden>
+                  <ThOrden orden={orden} columna="socio">
+                    Socio
+                  </ThOrden>
+                  <ThOrden orden={orden} columna="cuotas" primero="desc">
+                    Cuotas
+                  </ThOrden>
                   <Th>Medio</Th>
-                  <Th className="text-right">Total</Th>
+                  <ThOrden orden={orden} columna="total" primero="desc" className="text-right">
+                    Total
+                  </ThOrden>
                   <Th>Estado</Th>
                   <Th className="w-10" />
                 </tr>
@@ -202,4 +298,8 @@ export function CobrosPage() {
       />
     </>
   );
+}
+
+function valorValido(valor: string | null): string | undefined {
+  return valor && /^\d{4}-\d{2}-\d{2}$/.test(valor) ? valor : undefined;
 }

@@ -54,7 +54,7 @@ export class CobrosService {
     private readonly adelantos: AdelantosService,
   ) {}
 
-  async listar({ q, socioId, parcelaId, desde, hasta, medio, estado, loteoId, page, pageSize }: CobroListar): Promise<CobrosPaginados> {
+  async listar({ q, socioId, parcelaId, desde, hasta, medio, estado, loteoId, page, pageSize, orden, dir }: CobroListar): Promise<CobrosPaginados> {
     const where: Prisma.CobroWhereInput = {
       ...(socioId && { socioId }),
       // Un cobro es «de la parcela» si alguno de sus renglones cancela una cuota suya.
@@ -74,7 +74,7 @@ export class CobrosService {
       this.prisma.cobro.findMany({
         where,
         include: completo,
-        orderBy: [{ fecha: 'desc' }, { id: 'desc' }],
+        orderBy: this.ordenDeCobros(orden, dir),
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
@@ -89,6 +89,23 @@ export class CobrosService {
       pageSize,
       resumen: { cobros: suma._count, total: suma._sum.total ?? 0 },
     };
+  }
+
+  private ordenDeCobros(orden: CobroListar['orden'], dir: CobroListar['dir'] = 'asc'): Prisma.CobroOrderByWithRelationInput[] {
+    switch (orden) {
+      case 'recibo':
+        return [{ recibo: { numero: dir } }, { id: dir }];
+      case 'fecha':
+        return [{ fecha: dir }, { id: dir }];
+      case 'socio':
+        return [{ socio: { apellido: dir } }, { socio: { nombre: dir } }, { fecha: 'desc' }, { id: 'desc' }];
+      case 'cuotas':
+        return [{ detalles: { _count: dir } }, { fecha: 'desc' }, { id: 'desc' }];
+      case 'total':
+        return [{ total: dir }, { fecha: 'desc' }, { id: 'desc' }];
+      default:
+        return [{ fecha: 'desc' }, { id: 'desc' }];
+    }
   }
 
   async obtener(id: number): Promise<CobroDetalle> {

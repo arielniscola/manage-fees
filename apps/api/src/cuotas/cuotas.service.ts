@@ -49,6 +49,8 @@ export class CuotasService {
     loteoId,
     page,
     pageSize,
+    orden,
+    dir,
   }: CuotaListar): Promise<Paginado<CuotaListItem>> {
     const hoyISO = hoy();
     const where: Prisma.CuotaWhereInput = {
@@ -76,13 +78,31 @@ export class CuotasService {
       this.prisma.cuota.findMany({
         where,
         include: conSocioYParcela,
-        orderBy: [{ periodo: 'desc' }, { parcela: { codigo: 'asc' } }],
+        orderBy: this.ordenDeCuotas(orden, dir),
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
     ]);
 
     return { items: cuotas.map((c) => this.aListItem(c, hoyISO, config)), total, page, pageSize };
+  }
+
+  /** El id cierra cada orden, para que las páginas no se pisen entre filas empatadas. */
+  private ordenDeCuotas(orden: CuotaListar['orden'], dir: CuotaListar['dir'] = 'asc'): Prisma.CuotaOrderByWithRelationInput[] {
+    switch (orden) {
+      case 'periodo':
+        return [{ periodo: dir }, { parcela: { codigo: 'asc' } }, { id: 'asc' }];
+      case 'socio':
+        return [{ socio: { apellido: dir } }, { socio: { nombre: dir } }, { periodo: 'desc' }, { id: 'asc' }];
+      case 'parcela':
+        return [{ parcela: { codigo: dir } }, { periodo: 'desc' }, { id: 'asc' }];
+      case 'vencimiento':
+        return [{ vencimiento: dir }, { id: dir }];
+      case 'importe':
+        return [{ importe: dir }, { periodo: 'desc' }, { id: 'asc' }];
+      default:
+        return [{ periodo: 'desc' }, { parcela: { codigo: 'asc' } }, { id: 'asc' }];
+    }
   }
 
   /**

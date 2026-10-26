@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { fechaSchema, hoy, paginacionSchema, textoOpcional } from './common';
+import { fechaSchema, hoy, ordenSchema, paginacionSchema, textoOpcional } from './common';
 import { mesSchema } from './cuotas';
 import { morasSchema } from './interes';
 import type { Periodicidad } from './periodos';
@@ -68,7 +68,11 @@ export type CobroAnular = z.output<typeof cobroAnularSchema>;
 
 // ---------------------------------------------------------------- Listados
 
+export const ORDEN_COBROS = ['recibo', 'fecha', 'socio', 'cuotas', 'total'] as const;
+export type OrdenCobros = (typeof ORDEN_COBROS)[number];
+
 export const cobroListarSchema = paginacionSchema.extend({
+  ...ordenSchema(ORDEN_COBROS),
   q: z.string().trim().optional(),
   socioId: z.coerce.number().int().positive().optional(),
   /** Cobros que cancelaron alguna cuota de esta parcela. */

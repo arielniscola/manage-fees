@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
+import type { DireccionOrden } from '@mf/shared';
 
 export function useDebounce<T>(valor: T, ms = 300): T {
   const [demorado, setDemorado] = useState(valor);
@@ -45,4 +46,37 @@ export function useFiltrosUrl<E extends string>(estadoPorDefecto: E, reiniciarCo
   }, [reiniciarCon]);
 
   return { q, estado, page, params, actualizar };
+}
+
+export interface OrdenTabla<C extends string> {
+  columna: C;
+  dir: DireccionOrden;
+  ordenar: (columna: C, primero?: DireccionOrden) => void;
+  /** Lo que se manda a la API: nada mientras rija el orden por defecto del listado. */
+  query: { orden?: C; dir?: DireccionOrden };
+}
+
+/**
+ * Orden de un listado guardado en la URL (?orden=&dir=), junto a los filtros. `porDefecto`
+ * tiene que coincidir con el orden que la API usa sin parámetros, para que la flecha diga
+ * la verdad; elegirlo de nuevo lo saca de la URL. Una columna que no está en `columnas`
+ * —por ejemplo, la deuda fuera del listado de morosos— se ignora.
+ */
+export function useOrdenUrl<C extends string>(
+  { params, actualizar }: { params: URLSearchParams; actualizar: (cambios: { orden?: string; dir?: string }) => void },
+  columnas: readonly C[],
+  porDefecto: { columna: C; dir: DireccionOrden },
+): OrdenTabla<C> {
+  const enUrl = params.get('orden') as C | null;
+  const elegida = enUrl && columnas.includes(enUrl) ? enUrl : null;
+  const columna = elegida ?? porDefecto.columna;
+  const dir: DireccionOrden = elegida ? (params.get('dir') === 'desc' ? 'desc' : 'asc') : porDefecto.dir;
+
+  const ordenar = (nueva: C, primero: DireccionOrden = 'asc') => {
+    const nuevoDir = nueva === columna ? (dir === 'asc' ? 'desc' : 'asc') : primero;
+    const esDefecto = nueva === porDefecto.columna && nuevoDir === porDefecto.dir;
+    actualizar(esDefecto ? { orden: undefined, dir: undefined } : { orden: nueva, dir: nuevoDir });
+  };
+
+  return { columna, dir, ordenar, query: elegida ? { orden: elegida, dir } : {} };
 }

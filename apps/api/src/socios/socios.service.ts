@@ -39,7 +39,7 @@ export class SociosService {
     if (filtros.estado === 'moroso') return this.listarPorDeuda(filtros, { soloVencidas: true });
     if (filtros.estado === 'con_deuda') return this.listarPorDeuda(filtros, { soloVencidas: false });
 
-    const { q, estado, loteoId, page, pageSize } = filtros;
+    const { q, estado, loteoId, page, pageSize, orden, dir } = filtros;
     const where: Prisma.SocioWhereInput = {
       ...(estado === 'activo' && { fechaBaja: null }),
       ...(estado === 'baja' && { fechaBaja: { not: null } }),
@@ -53,7 +53,7 @@ export class SociosService {
       this.prisma.socio.findMany({
         where,
         include: conParcelasVigentes,
-        orderBy: [{ apellido: 'asc' }, { nombre: 'asc' }, { numero: 'asc' }],
+        orderBy: this.ordenDeSocios(orden, dir),
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
@@ -74,7 +74,7 @@ export class SociosService {
    * sobre las cuotas y recién después se traen los socios de la página.
    */
   private async listarPorDeuda(
-    { q, loteoId, page, pageSize }: SocioListar,
+    { q, loteoId, page, pageSize, orden, dir }: SocioListar,
     { soloVencidas }: { soloVencidas: boolean },
   ): Promise<Paginado<SocioListItem>> {
     const where: Prisma.SocioWhereInput = {
@@ -101,18 +101,23 @@ export class SociosService {
       })
     )
       .map((d) => [d.socioId, d._sum.importe ?? 0] as const)
-      .sort((a, b) => b[1] - a[1]);
+      .sort((a, b) => (orden === 'deuda' && dir !== 'desc' ? a[1] - b[1] : b[1] - a[1]));
 
-    const pagina = deudas.slice((page - 1) * pageSize, page * pageSize).map(([socioId]) => socioId);
+    // Ordenados por otra columna, los deudores se paginan en la base como cualquier listado.
+    const porDeuda = !orden || orden === 'deuda';
+    const ids = deudas.map(([socioId]) => socioId);
+    const deLaPagina = ids.slice((page - 1) * pageSize, page * pageSize);
     const socios = await this.prisma.socio.findMany({
-      where: { id: { in: pagina } },
+      where: { id: { in: porDeuda ? deLaPagina : ids } },
       include: conParcelasVigentes,
+      ...(!porDeuda && { orderBy: this.ordenDeSocios(orden, dir), skip: (page - 1) * pageSize, take: pageSize }),
     });
+    const pagina = porDeuda ? deLaPagina : socios.map((s) => s.id);
     const cuentas = await this.estadoDeCuenta(pagina, loteoId);
     const porId = new Map(socios.map((s) => [s.id, s]));
 
     return {
-      // El orden lo manda la deuda, no el apellido.
+      // Por deuda, el orden lo manda el arreglo de deudas, no la base.
       items: pagina.flatMap((id) => {
         const socio = porId.get(id);
         return socio ? [this.aListItem(socio, cuentas.get(id))] : [];
@@ -121,6 +126,20 @@ export class SociosService {
       page,
       pageSize,
     };
+  }
+
+  /** `deuda` no es una columna: sin los totales de cuotas a mano, cae en el orden por apellido. */
+  private ordenDeSocios(orden: SocioListar['orden'], dir: SocioListar['dir'] = 'asc'): Prisma.SocioOrderByWithRelationInput[] {
+    switch (orden) {
+      case 'numero':
+        return [{ numero: dir }];
+      case 'fechaAlta':
+        return [{ fechaAlta: dir }, { numero: dir }];
+      case 'socio':
+        return [{ apellido: dir }, { nombre: dir }, { numero: dir }];
+      default:
+        return [{ apellido: 'asc' }, { nombre: 'asc' }, { numero: 'asc' }];
+    }
   }
 
   async obtener(id: number): Promise<SocioDetalle> {

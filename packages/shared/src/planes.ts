@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { fechaSchema, hoy, paginacionSchema, textoOpcional } from './common';
+import { fechaSchema, hoy, ordenSchema, paginacionSchema, textoOpcional } from './common';
 import { importeOpcionalSchema, repartir } from './dinero';
 import { morasSchema } from './interes';
 import { mesDe, sumarMeses, vencimientoDe } from './periodos';
@@ -132,7 +132,11 @@ export const planCancelarSchema = z.object({
 export type PlanCancelarInput = z.input<typeof planCancelarSchema>;
 export type PlanCancelar = z.output<typeof planCancelarSchema>;
 
+export const ORDEN_PLANES = ['plan', 'fecha', 'socio', 'deuda', 'saldo', 'proximo'] as const;
+export type OrdenPlanes = (typeof ORDEN_PLANES)[number];
+
 export const planListarSchema = paginacionSchema.extend({
+  ...ordenSchema(ORDEN_PLANES),
   q: z.string().trim().optional(),
   socioId: z.coerce.number().int().positive().optional(),
   estado: z.enum([...ESTADOS_PLAN, 'todos']).default('todos'),

@@ -4,16 +4,16 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Link, useNavigate } from 'react-router';
 import { ArrowLeftRight, History, LayoutGrid, Map, Pencil, Plus, Search, Trash2, Upload } from 'lucide-react';
 import { toast } from 'sonner';
-import { parcelaCrearSchema, pesos, type ParcelaCrear, type ParcelaCrearInput, type ParcelaListItem } from '@mf/shared';
+import { ORDEN_PARCELAS, parcelaCrearSchema, pesos, type ParcelaCrear, type ParcelaCrearInput, type ParcelaListItem } from '@mf/shared';
 import { Button } from '@/components/ui/button';
-import { Badge, Card, Chips, ErrorCarga, FilasCargando, Paginacion, Tabla, Td, Th, Vacio } from '@/components/ui/display';
+import { Badge, Card, Chips, ErrorCarga, FilasCargando, Paginacion, Tabla, Td, Th, ThOrden, Vacio } from '@/components/ui/display';
 import { Dialog } from '@/components/ui/dialog';
 import { Field, Input, Select } from '@/components/ui/field';
 import { Encabezado } from '@/layout/AppLayout';
 import { useLoteoActivo } from '@/layout/loteo-activo';
 import { ApiError } from '@/lib/api';
 import { fecha, metros, nombreCompleto, plural } from '@/lib/formato';
-import { useDebounce, useFiltrosUrl } from '@/lib/hooks';
+import { useDebounce, useFiltrosUrl, useOrdenUrl } from '@/lib/hooks';
 import { AccionLoteDialog, BarraLote, CasillaFila, CasillaTodas, useSeleccion } from '@/components/ui/lotes';
 import { useEliminarParcela, useEliminarParcelas, useGuardarParcela, useLoteos, useParcelas, useSectores } from './api';
 import { LoteosDialog } from './LoteosDialog';
@@ -27,6 +27,7 @@ export function ParcelasPage() {
   const navigate = useNavigate();
   const { loteoId } = useLoteoActivo();
   const filtros = useFiltrosUrl<EstadoFiltro>('todas', loteoId);
+  const orden = useOrdenUrl(filtros, ORDEN_PARCELAS, { columna: 'ubicacion', dir: 'asc' });
   const [texto, setTexto] = useState(filtros.q);
   const q = useDebounce(texto);
   const [editando, setEditando] = useState<ParcelaListItem | 'nueva' | null>(null);
@@ -56,6 +57,7 @@ export function ParcelasPage() {
     loteoId,
     page: filtros.page,
     pageSize: PAGE_SIZE,
+    ...orden.query,
   });
   // Solo se eligen las que se pueden borrar: las que tuvieron titular no.
   const seleccion = useSeleccion<ParcelaListItem>({ q: filtros.q, estado: filtros.estado, sectorId, loteoId });
@@ -108,20 +110,22 @@ export function ParcelasPage() {
           ]}
         />
         {!!sectoresDelLoteo.length && (
-          <Select
-            aria-label="Filtrar por sector"
-            className="w-[170px]"
-            value={sectorId ?? ''}
-            onChange={(e) => setSectorId(e.target.value ? Number(e.target.value) : null)}
-          >
-            <option value="">Todos los sectores</option>
-            {sectoresDelLoteo.map((s) => (
-              <option key={s.id} value={s.id}>
-                {/* Sin loteo activo los nombres se repiten entre loteos: hay que aclararlo. */}
-                {loteoId ? s.nombre : `${s.loteo?.nombre ?? 'Sin loteo'} · ${s.nombre}`}
-              </option>
-            ))}
-          </Select>
+          // El ancho va en el contenedor: Select ya trae w-full y cn no resuelve el choque de clases.
+          <div className="w-[170px] shrink-0">
+            <Select
+              aria-label="Filtrar por sector"
+              value={sectorId ?? ''}
+              onChange={(e) => setSectorId(e.target.value ? Number(e.target.value) : null)}
+            >
+              <option value="">Todos los sectores</option>
+              {sectoresDelLoteo.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {/* Sin loteo activo los nombres se repiten entre loteos: hay que aclararlo. */}
+                  {loteoId ? s.nombre : `${s.loteo?.nombre ?? 'Sin loteo'} · ${s.nombre}`}
+                </option>
+              ))}
+            </Select>
+          </div>
         )}
       </div>
 
@@ -149,9 +153,15 @@ export function ParcelasPage() {
               <thead>
                 <tr>
                   <CasillaTodas items={elegibles} seleccion={seleccion} />
-                  <Th>Código</Th>
-                  <Th>Loteo y sector</Th>
-                  <Th className="text-right">Superficie</Th>
+                  <ThOrden orden={orden} columna="codigo">
+                    Código
+                  </ThOrden>
+                  <ThOrden orden={orden} columna="ubicacion">
+                    Loteo y sector
+                  </ThOrden>
+                  <ThOrden orden={orden} columna="superficie" primero="desc" className="text-right">
+                    Superficie
+                  </ThOrden>
                   <Th>Descripción</Th>
                   <Th>Titular</Th>
                   <Th>Estado</Th>

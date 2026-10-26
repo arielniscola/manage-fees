@@ -26,6 +26,18 @@ export const paginacionSchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 });
 
+export const DIRECCIONES_ORDEN = ['asc', 'desc'] as const;
+export type DireccionOrden = (typeof DIRECCIONES_ORDEN)[number];
+
+/**
+ * Orden de un listado: la columna y el sentido, ascendente si no viene. Sin columna, cada
+ * listado usa el suyo de siempre y el sentido no cuenta.
+ */
+export const ordenSchema = <C extends string>(columnas: readonly [C, ...C[]]) => ({
+  orden: z.enum(columnas).optional(),
+  dir: z.enum(DIRECCIONES_ORDEN).optional(),
+});
+
 export interface Paginado<T> {
   items: T[];
   total: number;

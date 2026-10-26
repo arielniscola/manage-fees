@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { FileSpreadsheet, TrendingUp } from 'lucide-react';
+import { ChevronRight, FileSpreadsheet, TrendingUp } from 'lucide-react';
 import { hoy, inicioDelMes, pesos, pesosCortos, type MesDeEvolucion } from '@mf/shared';
 import { Card, Chips, ErrorCarga } from '@/components/ui/display';
 import { Input } from '@/components/ui/field';
@@ -96,23 +96,27 @@ export function PanelPage() {
               valor={pesosCortos(data.cobrado)}
               detalle={`${plural(data.cobros, 'cobro')} · ${formatoFecha(data.desde)} a ${formatoFecha(data.hasta)}`}
               tono="ok"
+              to={`/cobros?desde=${data.desde}&hasta=${data.hasta}`}
             />
             <Kpi
               etiqueta="Deuda total"
               valor={pesosCortos(data.deudaTotal)}
               detalle={`${plural(data.cuotasPendientes, 'cuota pendiente', 'cuotas pendientes')}`}
+              to="/cuotas?estado=impaga"
             />
             <Kpi
               etiqueta="Deuda vencida"
               valor={pesosCortos(data.deudaVencida)}
               detalle={`${plural(data.cuotasVencidas, 'cuota vencida', 'cuotas vencidas')}`}
               tono="mor"
+              to="/cuotas?estado=vencida"
             />
             <Kpi
               etiqueta="Morosidad"
               valor={`${data.morosidad.toFixed(1)} %`}
               detalle={`${data.sociosEnMora} de ${plural(data.sociosActivos, 'socio activo', 'socios activos')}`}
               tono={data.morosidad > 0 ? 'pend' : 'ok'}
+              to="/socios?estado=moroso"
             />
           </div>
 
@@ -122,13 +126,17 @@ export function PanelPage() {
               <TopMorosos morosos={data.topMorosos} />
               <Card className="flex flex-col gap-4 px-6 py-5">
                 <h2 className="font-serif text-lg font-medium">La cooperativa hoy</h2>
-                <dl className="flex flex-col gap-3">
-                  <Dato etiqueta="Socios activos">{data.sociosActivos}</Dato>
-                  <Dato etiqueta="Parcelas asignadas">
+                <ul className="flex flex-col gap-3">
+                  <Dato etiqueta="Socios activos" to="/socios">
+                    {data.sociosActivos}
+                  </Dato>
+                  <Dato etiqueta="Parcelas asignadas" to="/parcelas?estado=asignada">
                     {data.parcelasAsignadas} <span className="text-tenue">de {data.parcelasTotales}</span>
                   </Dato>
-                  <Dato etiqueta="Planes de pago vigentes">{data.planesVigentes}</Dato>
-                </dl>
+                  <Dato etiqueta="Planes de pago vigentes" to="/planes?estado=vigente">
+                    {data.planesVigentes}
+                  </Dato>
+                </ul>
               </Card>
             </div>
           </div>
@@ -138,33 +146,44 @@ export function PanelPage() {
   );
 }
 
+/** Cada indicador abre el listado que lo explica, con el filtro ya puesto. El loteo activo se comparte. */
 function Kpi({
   etiqueta,
   valor,
   detalle,
   tono,
+  to,
 }: {
   etiqueta: string;
   valor: string;
   detalle: string;
   tono?: 'ok' | 'mor' | 'pend';
+  to: string;
 }) {
   const color = tono ? { ok: 'text-ok', mor: 'text-mor', pend: 'text-pend' }[tono] : '';
   return (
-    <Card className="flex flex-col gap-1 px-6 py-5">
-      <span className="text-xs font-semibold uppercase tracking-[0.06em] text-tenue">{etiqueta}</span>
+    <Link
+      to={to}
+      className="group flex flex-col gap-1 rounded-card border border-borde bg-superficie px-6 py-5 transition-colors hover:border-pino-300 hover:bg-superficie-2"
+    >
+      <span className="flex items-center justify-between gap-2 text-xs font-semibold uppercase tracking-[0.06em] text-tenue">
+        {etiqueta}
+        <ChevronRight className="size-4 text-placeholder transition-colors group-hover:text-pino-600" aria-hidden />
+      </span>
       <span className={`font-serif text-[30px] font-medium leading-tight tabular ${color}`}>{valor}</span>
       <span className="text-[13px] text-tenue">{detalle}</span>
-    </Card>
+    </Link>
   );
 }
 
-function Dato({ etiqueta, children }: { etiqueta: string; children: ReactNode }) {
+function Dato({ etiqueta, to, children }: { etiqueta: string; to: string; children: ReactNode }) {
   return (
-    <div className="flex items-baseline justify-between gap-4 border-b border-borde pb-3 last:border-b-0 last:pb-0">
-      <dt className="text-sm text-tenue">{etiqueta}</dt>
-      <dd className="font-serif text-xl font-medium tabular">{children}</dd>
-    </div>
+    <li className="border-b border-borde pb-3 last:border-b-0 last:pb-0">
+      <Link to={to} className="group flex items-baseline justify-between gap-4">
+        <span className="text-sm text-tenue group-hover:text-tinta group-hover:underline">{etiqueta}</span>
+        <span className="font-serif text-xl font-medium tabular">{children}</span>
+      </Link>
+    </li>
   );
 }
 

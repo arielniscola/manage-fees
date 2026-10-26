@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, ChevronsUpDown } from 'lucide-react';
+import type { DireccionOrden } from '@mf/shared';
 import { cn } from '@/lib/cn';
+import type { OrdenTabla } from '@/lib/hooks';
 
 type Tono = 'ok' | 'pend' | 'mor' | 'baja' | 'pino';
 
@@ -91,11 +93,44 @@ export function Tabla({ children }: { children: ReactNode }) {
   );
 }
 
-export function Th({ children, className }: { children?: ReactNode; className?: string }) {
+export function Th({ children, className, ...props }: { children?: ReactNode; className?: string; 'aria-sort'?: 'ascending' | 'descending' }) {
   return (
-    <th className={cn('whitespace-nowrap border-b border-borde bg-superficie-2 px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.06em] text-tenue', className)}>
+    <th {...props} className={cn('whitespace-nowrap border-b border-borde bg-superficie-2 px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.06em] text-tenue', className)}>
       {children}
     </th>
+  );
+}
+
+/**
+ * Encabezado que ordena el listado por su columna. El primer clic usa `primero` —descendente
+ * conviene para importes y fechas— y los siguientes alternan el sentido.
+ */
+export function ThOrden<C extends string>({
+  orden,
+  columna,
+  primero = 'asc',
+  className,
+  children,
+}: {
+  orden: OrdenTabla<C>;
+  columna: C;
+  primero?: DireccionOrden;
+  className?: string;
+  children: ReactNode;
+}) {
+  const activa = orden.columna === columna;
+  const Icono = !activa ? ChevronsUpDown : orden.dir === 'asc' ? ArrowUp : ArrowDown;
+  return (
+    <Th className={className} aria-sort={activa ? (orden.dir === 'asc' ? 'ascending' : 'descending') : undefined}>
+      <button
+        type="button"
+        onClick={() => orden.ordenar(columna, primero)}
+        className={cn('-mx-1 inline-flex items-center gap-1 rounded px-1 uppercase transition-colors hover:text-tinta', activa && 'text-tinta')}
+      >
+        {children}
+        <Icono className={cn('size-3.5 shrink-0', !activa && 'opacity-40')} aria-hidden />
+      </button>
+    </Th>
   );
 }
 

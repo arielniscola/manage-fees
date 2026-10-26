@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { fechaSchema, hoy, paginacionSchema } from './common';
+import { fechaSchema, hoy, ordenSchema, paginacionSchema } from './common';
 import { importeSchema } from './dinero';
 import { etiquetaPeriodo, PERIODICIDADES, type Periodicidad } from './periodos';
 import { numeroPlan } from './planes';
@@ -128,7 +128,11 @@ export const cuotasDeSocioSchema = z.object({
 export type CuotasDeSocioInput = z.input<typeof cuotasDeSocioSchema>;
 export type CuotasDeSocio = z.output<typeof cuotasDeSocioSchema>;
 
+export const ORDEN_CUOTAS = ['periodo', 'socio', 'parcela', 'vencimiento', 'importe'] as const;
+export type OrdenCuotas = (typeof ORDEN_CUOTAS)[number];
+
 export const cuotaListarSchema = paginacionSchema.extend({
+  ...ordenSchema(ORDEN_CUOTAS),
   q: z.string().trim().optional(),
   socioId: z.coerce.number().int().positive().optional(),
   parcelaId: z.coerce.number().int().positive().optional(),

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { fechaSchema, hoy, paginacionSchema, textoOpcional } from './common';
+import { fechaSchema, hoy, ordenSchema, paginacionSchema, textoOpcional } from './common';
 import type { EstadoCuenta } from './cuotas';
 import type { SectorResumen } from './parcelas';
 
@@ -123,7 +123,12 @@ export type SocioBaja = z.output<typeof socioBajaSchema>;
 export const ESTADOS_SOCIO = ['activo', 'baja'] as const;
 export type EstadoSocio = (typeof ESTADOS_SOCIO)[number];
 
+/** `deuda` solo ordena los listados de morosos y con deuda, que son los que la suman. */
+export const ORDEN_SOCIOS = ['numero', 'socio', 'fechaAlta', 'deuda'] as const;
+export type OrdenSocios = (typeof ORDEN_SOCIOS)[number];
+
 export const socioListarSchema = paginacionSchema.extend({
+  ...ordenSchema(ORDEN_SOCIOS),
   q: z.string().trim().optional(),
   /**
    * `moroso` son los socios activos con al menos una cuota vencida impaga, ordenados por

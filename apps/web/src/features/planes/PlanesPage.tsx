@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { Plus, Search, Users } from 'lucide-react';
-import { ESTADOS_PLAN, ETIQUETA_ESTADO_PLAN, numeroPlan, pesos, type EstadoPlan } from '@mf/shared';
+import { ESTADOS_PLAN, ETIQUETA_ESTADO_PLAN, ORDEN_PLANES, numeroPlan, pesos, type EstadoPlan } from '@mf/shared';
 import { Button } from '@/components/ui/button';
-import { Card, Chips, ErrorCarga, FilasCargando, Paginacion, Tabla, Td, Th, Vacio } from '@/components/ui/display';
+import { Card, Chips, ErrorCarga, FilasCargando, Paginacion, Tabla, Td, Th, ThOrden, Vacio } from '@/components/ui/display';
 import { Input } from '@/components/ui/field';
 import { Encabezado } from '@/layout/AppLayout';
 import { useLoteoActivo } from '@/layout/loteo-activo';
 import { fecha, nombreCompleto, plural } from '@/lib/formato';
-import { useDebounce, useFiltrosUrl } from '@/lib/hooks';
+import { useDebounce, useFiltrosUrl, useOrdenUrl } from '@/lib/hooks';
 import { usePlanes } from './api';
 import { NuevoPlanDialog } from './NuevoPlanDialog';
 import { BadgePlan, PlanDetalleDialog } from './PlanDetalleDialog';
@@ -19,6 +19,7 @@ const PAGE_SIZE = 25;
 export function PlanesPage() {
   const { loteoId } = useLoteoActivo();
   const filtros = useFiltrosUrl<EstadoFiltro>('todos', loteoId);
+  const orden = useOrdenUrl(filtros, ORDEN_PLANES, { columna: 'fecha', dir: 'desc' });
   const [texto, setTexto] = useState(filtros.q);
   const q = useDebounce(texto);
   const [creando, setCreando] = useState(false);
@@ -34,6 +35,7 @@ export function PlanesPage() {
     loteoId,
     page: filtros.page,
     pageSize: PAGE_SIZE,
+    ...orden.query,
   });
 
   const filtrando = !!filtros.q || filtros.estado !== 'todos';
@@ -104,13 +106,25 @@ export function PlanesPage() {
             <Tabla>
               <thead>
                 <tr>
-                  <Th>Plan</Th>
-                  <Th>Firmado</Th>
-                  <Th>Socio</Th>
+                  <ThOrden orden={orden} columna="plan" primero="desc">
+                    Plan
+                  </ThOrden>
+                  <ThOrden orden={orden} columna="fecha" primero="desc">
+                    Firmado
+                  </ThOrden>
+                  <ThOrden orden={orden} columna="socio">
+                    Socio
+                  </ThOrden>
                   <Th>Cuotas</Th>
-                  <Th className="text-right">Deuda</Th>
-                  <Th className="text-right">Saldo</Th>
-                  <Th>Próximo vence</Th>
+                  <ThOrden orden={orden} columna="deuda" primero="desc" className="text-right">
+                    Deuda
+                  </ThOrden>
+                  <ThOrden orden={orden} columna="saldo" primero="desc" className="text-right">
+                    Saldo
+                  </ThOrden>
+                  <ThOrden orden={orden} columna="proximo">
+                    Próximo vence
+                  </ThOrden>
                   <Th>Estado</Th>
                 </tr>
               </thead>

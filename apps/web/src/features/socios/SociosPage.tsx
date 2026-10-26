@@ -1,20 +1,23 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
-import { ChevronRight, History, Plus, Search, Trash2, Upload } from 'lucide-react';
-import type { SocioListItem } from '@mf/shared';
+import { ChevronRight, History, Plus, Search, Trash2, Upload, Wallet } from 'lucide-react';
+import { ORDEN_SOCIOS, type SocioListItem, type SocioResumen } from '@mf/shared';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/field';
-import { Avatar, Badge, Card, Chips, ErrorCarga, FilasCargando, Paginacion, Tabla, Td, Th, Vacio } from '@/components/ui/display';
+import { Avatar, Badge, Card, Chips, ErrorCarga, FilasCargando, Paginacion, Tabla, Td, Th, ThOrden, Vacio } from '@/components/ui/display';
 import { AccionLoteDialog, BarraLote, CasillaFila, CasillaTodas, useSeleccion } from '@/components/ui/lotes';
 import { Encabezado } from '@/layout/AppLayout';
 import { useLoteoActivo } from '@/layout/loteo-activo';
 import { dni, fecha, iniciales, nombreCompleto, plural } from '@/lib/formato';
-import { useDebounce, useFiltrosUrl } from '@/lib/hooks';
+import { useDebounce, useFiltrosUrl, useOrdenUrl } from '@/lib/hooks';
+import { RegistrarPagoDialog } from '@/features/cobros/RegistrarPagoDialog';
 import { EstadoDeCuenta } from '@/features/cuotas/estados';
 import { useEliminarSocios, useSocios } from './api';
 
 type EstadoFiltro = 'activo' | 'moroso' | 'suplente' | 'baja' | 'todos';
 const PAGE_SIZE = 20;
+// La deuda solo se suma en el listado de morosos: en el resto no se puede ordenar por ella.
+const ORDEN_SIN_DEUDA = ORDEN_SOCIOS.filter((c) => c !== 'deuda');
 
 const ETIQUETA_LISTADO: Record<EstadoFiltro, [string, string]> = {
   activo: ['socio', 'socios'],
@@ -28,6 +31,14 @@ export function SociosPage() {
   const navigate = useNavigate();
   const { loteoId } = useLoteoActivo();
   const filtros = useFiltrosUrl<EstadoFiltro>('activo', loteoId);
+  const morosos = filtros.estado === 'moroso';
+  const orden = useOrdenUrl(
+    filtros,
+    morosos ? ORDEN_SOCIOS : ORDEN_SIN_DEUDA,
+    morosos ? { columna: 'deuda', dir: 'desc' } : { columna: 'socio', dir: 'asc' },
+  );
+  // El socio se conserva al cerrar, para que el diálogo no cambie de contenido mientras se va.
+  const [cobro, setCobro] = useState<{ abierto: boolean; socio: SocioResumen | null }>({ abierto: false, socio: null });
   const [texto, setTexto] = useState(filtros.q);
   const q = useDebounce(texto);
   const [eliminando, setEliminando] = useState(false);
@@ -43,6 +54,7 @@ export function SociosPage() {
     loteoId,
     page: filtros.page,
     pageSize: PAGE_SIZE,
+    ...orden.query,
   });
 
   const buscando = !!filtros.q || filtros.estado !== 'activo';
@@ -130,14 +142,26 @@ export function SociosPage() {
               <thead>
                 <tr>
                   <CasillaTodas items={data?.items ?? []} seleccion={seleccion} />
-                  <Th className="w-[72px]">N°</Th>
-                  <Th>Socio</Th>
+                  <ThOrden orden={orden} columna="numero" className="w-[72px]">
+                    N°
+                  </ThOrden>
+                  <ThOrden orden={orden} columna="socio">
+                    Socio
+                  </ThOrden>
                   <Th>Parcelas</Th>
-                  <Th>Cuenta</Th>
+                  {morosos ? (
+                    <ThOrden orden={orden} columna="deuda" primero="desc">
+                      Cuenta
+                    </ThOrden>
+                  ) : (
+                    <Th>Cuenta</Th>
+                  )}
                   <Th>Contacto</Th>
-                  <Th>Socio desde</Th>
+                  <ThOrden orden={orden} columna="fechaAlta">
+                    Socio desde
+                  </ThOrden>
                   <Th>Estado</Th>
-                  <Th className="w-10" />
+                  <Th />
                 </tr>
               </thead>
               <tbody>
@@ -191,8 +215,23 @@ export function SociosPage() {
                       </Td>
                       <Td className="tabular text-tenue">{fecha(s.fechaAlta)}</Td>
                       <Td>{s.estado === 'activo' ? <Badge tono="ok">Activo</Badge> : <Badge tono="baja">Baja</Badge>}</Td>
-                      <Td className="text-placeholder">
-                        <ChevronRight className="size-4" />
+                      <Td>
+                        <div className="flex items-center justify-end gap-2">
+                          {s.estado === 'activo' && s.estadoCuenta.deuda > 0 && (
+                            <Button
+                              variante="terciario"
+                              tamanio="sm"
+                              title={`Cobrar a ${nombreCompleto(s)}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCobro({ abierto: true, socio: s });
+                              }}
+                            >
+                              <Wallet /> Cobrar
+                            </Button>
+                          )}
+                          <ChevronRight className="size-4 text-placeholder" />
+                        </div>
                       </Td>
                     </tr>
                   ))
@@ -206,6 +245,7 @@ export function SociosPage() {
         )}
       </Card>
 
+      <RegistrarPagoDialog abierto={cobro.abierto} onAbiertoChange={(abierto) => setCobro((v) => ({ ...v, abierto }))} socio={cobro.socio} />
       <AccionLoteDialog
         abierto={eliminando}
         onAbiertoChange={setEliminando}

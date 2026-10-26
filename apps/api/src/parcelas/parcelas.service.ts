@@ -29,7 +29,7 @@ type ParcelaConTitular = Prisma.ParcelaGetPayload<{ include: typeof conTitular }
 export class ParcelasService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async listar({ q, estado, sectorId, loteoId, page, pageSize }: ParcelaListar): Promise<Paginado<ParcelaListItem>> {
+  async listar({ q, estado, sectorId, loteoId, page, pageSize, orden, dir }: ParcelaListar): Promise<Paginado<ParcelaListItem>> {
     const where: Prisma.ParcelaWhereInput = {
       ...(estado === 'libre' && { asignaciones: { none: { hasta: null } } }),
       ...(estado === 'asignada' && { asignaciones: { some: { hasta: null } } }),
@@ -50,13 +50,27 @@ export class ParcelasService {
       this.prisma.parcela.findMany({
         where,
         include: conTitular,
-        orderBy: [{ sector: { loteo: { nombre: 'asc' } } }, { sector: { nombre: 'asc' } }, { codigo: 'asc' }],
+        orderBy: this.ordenDeParcelas(orden, dir),
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
     ]);
 
     return { items: parcelas.map((p) => this.aListItem(p)), total, page, pageSize };
+  }
+
+  private ordenDeParcelas(orden: ParcelaListar['orden'], dir: ParcelaListar['dir'] = 'asc'): Prisma.ParcelaOrderByWithRelationInput[] {
+    switch (orden) {
+      case 'codigo':
+        return [{ codigo: dir }, { id: 'asc' }];
+      // Las que no tienen superficie cargada van al final en los dos sentidos.
+      case 'superficie':
+        return [{ superficieM2: { sort: dir, nulls: 'last' } }, { codigo: 'asc' }, { id: 'asc' }];
+      default: {
+        const sentido = orden === 'ubicacion' ? dir : 'asc';
+        return [{ sector: { loteo: { nombre: sentido } } }, { sector: { nombre: sentido } }, { codigo: sentido }, { id: 'asc' }];
+      }
+    }
   }
 
   async obtener(id: number): Promise<ParcelaDetalle> {
