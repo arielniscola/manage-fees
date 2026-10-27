@@ -3,6 +3,7 @@ import type {
   AdelantoPrevioInput,
   AlcanceTarifa,
   CuotaAnularInput,
+  CuotaEliminarLoteInput,
   CuotaListarInput,
   CuotasDeSocioInput,
   CuotaListItem,
@@ -86,12 +87,29 @@ export function useAnularCuotas() {
   });
 }
 
-/** Borra cuotas ya anuladas. */
+/** Borra cuotas ya anuladas. Quitarlas de cobros anulados también cambia esos cobros. */
 export function useEliminarCuotas() {
   const invalidar = useInvalidar();
+  const qc = useQueryClient();
   return useMutation({
-    mutationFn: (ids: number[]) => api.post<ResultadoLote>('/cuotas/eliminar', { ids }),
-    onSuccess: invalidar,
+    mutationFn: (body: CuotaEliminarLoteInput) => api.post<ResultadoLote>('/cuotas/eliminar', body),
+    onSuccess: (_, { quitarDeCobros }) => {
+      invalidar();
+      if (quitarDeCobros) void qc.invalidateQueries({ queryKey: ['cobros'] });
+    },
+  });
+}
+
+/** Reemplaza una cuota anulada por la que corresponde hoy al titular actual. */
+export function useRegenerarCuota() {
+  const invalidar = useInvalidar();
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) => api.post<CuotaListItem>(`/cuotas/${id}/regenerar`, {}),
+    onSuccess: () => {
+      invalidar();
+      void qc.invalidateQueries({ queryKey: ['cobros'] });
+    },
   });
 }
 

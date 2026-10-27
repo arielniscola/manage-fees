@@ -165,6 +165,34 @@ export class GeneracionService {
     return candidatas.filter((c) => !existentes.has(clave(c))).sort((a, b) => a.periodo.localeCompare(b.periodo));
   }
 
+  /**
+   * La cuota que le correspondería hoy a un socio en un período puntual, de su parcela o
+   * la social, como si se generara de nuevo: con la tarifa o el importe vigente para ese
+   * período. Se retrotrae como «cobrar desde», así que sale aunque el socio haya recibido
+   * la parcela después. Null si ese período no le corresponde. No escribe nada.
+   */
+  async candidataDe(
+    socioId: number,
+    periodo: string,
+    destino: { origen: 'SOCIO' } | { origen: 'PARCELA'; parcelaId: number },
+    db: Cliente = this.prisma,
+  ): Promise<Candidata | null> {
+    const tarifas = await db.tarifa.findMany({ where: { activa: true }, orderBy: { vigenteDesde: 'asc' } });
+    const porAlcance = {
+      PARCELA: tarifas.filter((t) => t.alcance === 'PARCELA'),
+      SOCIO: tarifas.filter((t) => t.alcance === 'SOCIO'),
+    };
+    const { candidatas } = await this.calcular(porAlcance, primerDia(periodo), db, { socioId, desde: periodo });
+    return (
+      candidatas.find(
+        (c) =>
+          c.periodo === periodo &&
+          c.origen === destino.origen &&
+          (destino.origen === 'SOCIO' || c.parcelaId === destino.parcelaId),
+      ) ?? null
+    );
+  }
+
   private async calcular(
     tarifas: Record<AlcanceTarifa, Tarifa[]>,
     hasta: string,

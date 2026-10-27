@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
 import {
   cuotaAnularSchema,
+  cuotaEliminarLoteSchema,
   cuotaListarSchema,
   generarCuotasSchema,
   loteAnularSchema,
@@ -9,6 +10,7 @@ import {
   tarifaCrearSchema,
   tarifaListarSchema,
   type CuotaAnular,
+  type CuotaEliminarLote,
   type CuotaListar,
   type GenerarCuotas,
   type Lote,
@@ -91,8 +93,8 @@ export class CuotasController {
   /** Borra cuotas ya anuladas. Las que no lo están se saltean. */
   @Post('eliminar')
   @HttpCode(200)
-  eliminarLote(@Body(new ZodPipe(loteSchema)) { ids }: Lote) {
-    return enLote(ids, (id) => this.cuotas.eliminar(id));
+  eliminarLote(@Body(new ZodPipe(cuotaEliminarLoteSchema)) { ids, quitarDeCobros }: CuotaEliminarLote) {
+    return enLote(ids, (id) => this.cuotas.eliminar(id, { quitarDeCobros }));
   }
 
   /** Borra cuotas pagadas cargadas por error en el historial. Las que no lo son se saltean. */
@@ -107,5 +109,12 @@ export class CuotasController {
   @HttpCode(200)
   anular(@Param('id', ParseIntPipe) id: number, @Body(new ZodPipe(cuotaAnularSchema)) body: CuotaAnular) {
     return this.cuotas.anular(id, body);
+  }
+
+  /** Reemplaza una cuota anulada por la que corresponde hoy al titular actual. */
+  @Post(':id/regenerar')
+  @HttpCode(200)
+  regenerar(@Param('id', ParseIntPipe) id: number) {
+    return this.cuotas.regenerar(id);
   }
 }

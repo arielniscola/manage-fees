@@ -134,6 +134,8 @@ interface AccionLoteProps {
   hecho: [string, string];
   /** Se llama al cerrar después de correr, con o sin salteados: suele vaciar la selección. */
   onTerminado?: () => void;
+  /** Opciones propias de la acción, debajo del motivo. */
+  children?: ReactNode;
 }
 
 /**
@@ -152,6 +154,7 @@ export function AccionLoteDialog({
   etiquetaDe,
   hecho,
   onTerminado,
+  children,
 }: AccionLoteProps) {
   const [motivo, setMotivo] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -242,6 +245,7 @@ export function AccionLoteDialog({
           />
         </Field>
       )}
+      {children}
     </Dialog>
   );
 }

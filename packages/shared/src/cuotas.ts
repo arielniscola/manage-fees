@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { fechaSchema, hoy, ordenSchema, paginacionSchema } from './common';
 import { importeSchema } from './dinero';
+import { loteSchema } from './lotes';
 import { etiquetaPeriodo, PERIODICIDADES, type Periodicidad } from './periodos';
 import { numeroPlan } from './planes';
 import type { ParcelaResumen } from './socios';
@@ -197,6 +198,17 @@ export const cuotaAnularSchema = z.object({
 });
 export type CuotaAnularInput = z.input<typeof cuotaAnularSchema>;
 export type CuotaAnular = z.output<typeof cuotaAnularSchema>;
+
+/**
+ * Borrar cuotas anuladas. Una anulada puede seguir figurando en un cobro que se anuló
+ * después; con `quitarDeCobros` se la saca de esos cobros, y los que quedan vacíos se
+ * eliminan con su recibo. Sin él, esas cuotas se saltean.
+ */
+export const cuotaEliminarLoteSchema = loteSchema.extend({
+  quitarDeCobros: z.boolean().default(false),
+});
+export type CuotaEliminarLoteInput = z.input<typeof cuotaEliminarLoteSchema>;
+export type CuotaEliminarLote = z.output<typeof cuotaEliminarLoteSchema>;
 
 /** Concepto legible de una cuota, el mismo en pantalla y en el recibo. */
 export function conceptoCuota(datos: {

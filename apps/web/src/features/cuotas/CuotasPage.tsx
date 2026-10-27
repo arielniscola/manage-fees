@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link } from 'react-router';
-import { Ban, CalendarDays, PlayCircle, Search, Settings2, Trash2, Wallet } from 'lucide-react';
+import { Ban, CalendarDays, PlayCircle, RotateCcw, Search, Settings2, Trash2, Wallet } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   cuotaAnularSchema,
@@ -26,7 +26,7 @@ import { fecha, nombreCompleto, plural } from '@/lib/formato';
 import { useDebounce, useFiltrosUrl, useOrdenUrl } from '@/lib/hooks';
 import { useYo } from '@/features/auth/api';
 import { RegistrarPagoDialog } from '@/features/cobros/RegistrarPagoDialog';
-import { useAnularCuota, useAnularCuotas, useCuotas, useEliminarCuotas, useEliminarHistoricas } from './api';
+import { useAnularCuota, useAnularCuotas, useCuotas, useEliminarCuotas, useEliminarHistoricas, useRegenerarCuota } from './api';
 import { BadgeCuota } from './estados';
 import { GenerarPeriodoDialog } from './GenerarPeriodoDialog';
 
@@ -48,9 +48,11 @@ export function CuotasPage() {
   const q = useDebounce(texto);
   const [generar, setGenerar] = useState(false);
   const [anulando, setAnulando] = useState<CuotaListItem | null>(null);
+  const [regenerando, setRegenerando] = useState<CuotaListItem | null>(null);
   // El socio se conserva al cerrar, para que el diálogo no cambie de contenido mientras se va.
   const [cobro, setCobro] = useState<{ abierto: boolean; socio: SocioResumen | null }>({ abierto: false, socio: null });
   const [lote, setLote] = useState<'anular' | 'eliminar' | 'historicas' | null>(null);
+  const [quitarDeCobros, setQuitarDeCobros] = useState(false);
   const anularLote = useAnularCuotas();
   const eliminarLote = useEliminarCuotas();
   const eliminarHistoricas = useEliminarHistoricas();
@@ -226,7 +228,14 @@ export function CuotasPage() {
                 </Button>
               )}
               {paraEliminar.length > 0 && (
-                <Button variante="peligro" tamanio="sm" onClick={() => setLote('eliminar')}>
+                <Button
+                  variante="peligro"
+                  tamanio="sm"
+                  onClick={() => {
+                    setQuitarDeCobros(false);
+                    setLote('eliminar');
+                  }}
+                >
                   <Trash2 /> Eliminar {plural(paraEliminar.length, 'anulada')}
                 </Button>
               )}
@@ -319,6 +328,16 @@ export function CuotasPage() {
                             </button>
                           </div>
                         )}
+                        {seRegenera(c) && (
+                          <Button
+                            variante="terciario"
+                            tamanio="sm"
+                            title={`Volver a generar la cuota ${c.etiqueta}`}
+                            onClick={() => setRegenerando(c)}
+                          >
+                            <RotateCcw /> Volver a generar
+                          </Button>
+                        )}
                       </Td>
                     </tr>
                   ))
@@ -334,6 +353,7 @@ export function CuotasPage() {
 
       <GenerarPeriodoDialog abierto={generar} onAbiertoChange={setGenerar} />
       <AnularCuotaDialog cuota={anulando} onCerrar={() => setAnulando(null)} />
+      <RegenerarCuotaDialog cuota={regenerando} onCerrar={() => setRegenerando(null)} />
       <RegistrarPagoDialog abierto={cobro.abierto} onAbiertoChange={(abierto) => setCobro((v) => ({ ...v, abierto }))} socio={cobro.socio} />
       <AccionLoteDialog
         abierto={lote !== null}
@@ -352,7 +372,7 @@ export function CuotasPage() {
         onConfirmar={(motivo) => {
           const ids = enLote.map((c) => c.id);
           if (lote === 'anular') return anularLote.mutateAsync({ ids, motivo: motivo! });
-          return lote === 'historicas' ? eliminarHistoricas.mutateAsync(ids) : eliminarLote.mutateAsync(ids);
+          return lote === 'historicas' ? eliminarHistoricas.mutateAsync(ids) : eliminarLote.mutateAsync({ ids, quitarDeCobros });
         }}
         etiquetaDe={(id) => {
           const c = seleccion.elegidos.find((e) => e.id === id);
@@ -360,13 +380,32 @@ export function CuotasPage() {
         }}
         hecho={lote === 'anular' ? ['cuota anulada', 'cuotas anuladas'] : ['cuota eliminada', 'cuotas eliminadas']}
         onTerminado={seleccion.limpiar}
-      />
+      >
+        {lote === 'eliminar' && (
+          <label className="flex cursor-pointer items-start gap-3">
+            <input
+              type="checkbox"
+              className="mt-0.5 size-4 accent-pino-600"
+              checked={quitarDeCobros}
+              onChange={(e) => setQuitarDeCobros(e.target.checked)}
+            />
+            <span className="flex flex-col gap-0.5">
+              <span className="text-sm font-medium">Quitarlas también de los cobros anulados</span>
+              <span className="text-[13px] text-tenue">
+                Una cuota que figura en un cobro anulado no se puede borrar. Con esto se la saca de ese cobro, y si el cobro
+                queda vacío se elimina junto con su recibo. Los cobros vigentes no se tocan.
+              </span>
+            </span>
+          </label>
+        )}
+      </AccionLoteDialog>
     </>
   );
 }
 
 const seAnula = (c: CuotaListItem) => c.estado === 'pendiente' || c.estado === 'vencida';
 const esHistoricaPagada = (c: CuotaListItem) => c.historica && c.estado === 'pagada';
+const seRegenera = (c: CuotaListItem) => c.estado === 'anulada' && (c.origen === 'PARCELA' || c.origen === 'SOCIO');
 
 const valorValido = (valor: string | null, formato: RegExp): string | undefined =>
   valor && formato.test(valor) ? valor : undefined;
@@ -431,5 +470,41 @@ function AnularCuotaDialog({ cuota, onCerrar }: { cuota: CuotaListItem | null; o
         </Field>
       </form>
     </Dialog>
+  );
+}
+
+function RegenerarCuotaDialog({ cuota, onCerrar }: { cuota: CuotaListItem | null; onCerrar: () => void }) {
+  const regenerar = useRegenerarCuota();
+  const confirmar = () =>
+    regenerar.mutate(cuota!.id, {
+      onSuccess: (nueva) => {
+        toast.success(`Cuota generada a nombre de ${nombreCompleto(nueva.socio)}, por ${pesos(nueva.importe)}`);
+        onCerrar();
+      },
+      onError: (e) => toast.error(e.message),
+    });
+
+  return (
+    <Dialog
+      abierto={!!cuota}
+      onAbiertoChange={(v) => !v && onCerrar()}
+      ancho="sm"
+      titulo="Volver a generar la cuota"
+      descripcion={
+        cuota
+          ? `${cuota.etiqueta}${cuota.parcela ? ` · parcela ${cuota.parcela.etiqueta}` : ''}. Se borra la anulada y se crea de nuevo con el importe vigente${cuota.origen === 'PARCELA' ? ', a nombre del titular actual de la parcela' : ''}. Si figuraba en un cobro anulado, se la quita de ese cobro.`
+          : undefined
+      }
+      pie={
+        <>
+          <Button variante="secundario" onClick={onCerrar}>
+            Cancelar
+          </Button>
+          <Button cargando={regenerar.isPending} onClick={confirmar}>
+            Volver a generar
+          </Button>
+        </>
+      }
+    />
   );
 }

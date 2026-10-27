@@ -4,6 +4,7 @@ import {
   estadoVisible,
   hoy,
   moraSugerida,
+  numeroRecibo,
   type ConfiguracionInteres,
   type CuotaAnular,
   type CuotaListar,
@@ -17,6 +18,7 @@ import { cuotasDelLoteo } from '../common/loteo';
 import { aParcelaUbicada, parcelaResumen } from '../common/parcela';
 import { InteresService } from '../configuracion/interes.service';
 import { PrismaService } from '../prisma/prisma.module';
+import { GeneracionService } from './generacion.service';
 
 const conSocioYParcela = {
   socio: { select: { id: true, numero: true, nombre: true, apellido: true } },
@@ -35,6 +37,7 @@ export class CuotasService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly interes: InteresService,
+    private readonly generacion: GeneracionService,
   ) {}
 
   async listar({
@@ -148,20 +151,90 @@ export class CuotasService {
    * anuladas, para que nunca desaparezca deuda sin rastro. Ojo: una cuota de parcela o
    * social anulada es la que impide que la generación vuelva a crear ese período; al
    * borrarla, la próxima corrida lo genera de nuevo si sigue correspondiendo.
+   *
+   * Si quedó en cobros que después se anularon, con `quitarDeCobros` se la saca de ellos.
    */
-  async eliminar(id: number): Promise<void> {
-    const cuota = await this.prisma.cuota.findUnique({
-      where: { id },
-      include: { _count: { select: { detallesCobro: true, refinanciadaEn: true } } },
+  async eliminar(id: number, { quitarDeCobros = false } = {}): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      const cuota = await tx.cuota.findUnique({
+        where: { id },
+        include: { _count: { select: { refinanciadaEn: true } } },
+      });
+      if (!cuota) throw noEncontrado('No existe la cuota');
+      if (cuota.estado !== 'ANULADA') throw conflicto('Solo se pueden eliminar cuotas anuladas');
+      if (cuota.origen === 'PLAN') throw conflicto('Es una cuota de un plan de pago: forma parte del plan');
+      if (cuota._count.refinanciadaEn > 0) throw conflicto('Figura en un plan de pago');
+      await this.quitarDeCobrosAnulados(tx, id, quitarDeCobros);
+      await tx.cuota.delete({ where: { id } });
     });
-    if (!cuota) throw noEncontrado('No existe la cuota');
-    if (cuota.estado !== 'ANULADA') throw conflicto('Solo se pueden eliminar cuotas anuladas');
-    if (cuota.origen === 'PLAN') throw conflicto('Es una cuota de un plan de pago: forma parte del plan');
-    if (cuota._count.detallesCobro > 0) {
-      throw conflicto('Figura en un cobro, aunque esté anulado: eliminá primero ese cobro');
+  }
+
+  /**
+   * Vuelve a generar una cuota anulada de parcela o social: borra la anulada y crea en su
+   * lugar la que corresponde hoy, a nombre del titular actual de la parcela —o del mismo
+   * socio, si es la social— y con la tarifa o el importe vigente para ese período. Sirve
+   * cuando se anuló por un importe equivocado o porque la parcela cambió de titular. Si la
+   * anulada quedó en cobros anulados, se la quita de ellos, como al eliminarla.
+   */
+  async regenerar(id: number): Promise<CuotaListItem> {
+    const nueva = await this.prisma.$transaction(async (tx) => {
+      const cuota = await tx.cuota.findUnique({
+        where: { id },
+        include: { _count: { select: { refinanciadaEn: true } } },
+      });
+      if (!cuota) throw noEncontrado('No existe la cuota');
+      if (cuota.estado !== 'ANULADA') throw conflicto('Solo se pueden volver a generar cuotas anuladas');
+      if (cuota.origen !== 'PARCELA' && cuota.origen !== 'SOCIO') {
+        throw conflicto('Solo se vuelven a generar las cuotas de parcela y las sociales');
+      }
+      if (cuota._count.refinanciadaEn > 0) throw conflicto('Figura en un plan de pago');
+
+      let socioId = cuota.socioId;
+      if (cuota.origen === 'PARCELA') {
+        const titular = await tx.asignacion.findFirst({
+          where: { parcelaId: cuota.parcelaId!, hasta: null },
+          orderBy: { desde: 'desc' },
+          select: { socioId: true },
+        });
+        if (!titular) throw conflicto('La parcela no tiene un titular activo');
+        socioId = titular.socioId;
+      }
+      const destino = cuota.origen === 'PARCELA' ? { origen: 'PARCELA' as const, parcelaId: cuota.parcelaId! } : { origen: 'SOCIO' as const };
+      const candidata = await this.generacion.candidataDe(socioId, cuota.periodo, destino, tx);
+      if (!candidata) throw conflicto('Ese período ya no corresponde: no hay tarifa ni importe que lo cobre');
+
+      await this.quitarDeCobrosAnulados(tx, id, true);
+      await tx.cuota.delete({ where: { id } });
+      return tx.cuota.create({ data: candidata, include: conSocioYParcela });
+    });
+    return this.aListItem(nueva, hoy(), await this.interes.vigente());
+  }
+
+  /**
+   * Saca una cuota anulada de los cobros en que figura, que tienen que estar anulados: uno
+   * vigente la está cobrando. El cobro que queda sin renglones se elimina con su recibo,
+   * como al eliminarlo a mano; el que tiene otros los conserva, y su recibo sigue
+   * reimprimiéndose igual porque guarda sus datos. Sin `quitar`, solo avisa dónde figura.
+   */
+  private async quitarDeCobrosAnulados(tx: Prisma.TransactionClient, cuotaId: number, quitar: boolean): Promise<void> {
+    const detalles = await tx.cobroDetalle.findMany({
+      where: { cuotaId },
+      select: { cobro: { select: { id: true, anuladoEn: true, recibo: { select: { numero: true } } } } },
+    });
+    if (detalles.length === 0) return;
+    const recibo = (c: (typeof detalles)[number]['cobro']) => numeroRecibo(c.recibo?.numero ?? c.id);
+
+    const vigente = detalles.find((d) => !d.cobro.anuladoEn);
+    if (vigente) throw conflicto(`Figura en el recibo N° ${recibo(vigente.cobro)}, que no está anulado: anulá primero ese cobro`);
+    if (!quitar) {
+      const recibos = detalles.map((d) => recibo(d.cobro)).join(', ');
+      throw conflicto(`Figura en el cobro anulado del recibo N° ${recibos}: elegí quitarla también de ahí`);
     }
-    if (cuota._count.refinanciadaEn > 0) throw conflicto('Figura en un plan de pago');
-    await this.prisma.cuota.delete({ where: { id } });
+
+    const cobroIds = detalles.map((d) => d.cobro.id);
+    await tx.cobroDetalle.deleteMany({ where: { cuotaId } });
+    // Los renglones y el recibo se borran en cascada.
+    await tx.cobro.deleteMany({ where: { id: { in: cobroIds }, detalles: { none: {} } } });
   }
 
   /**
