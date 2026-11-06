@@ -15,8 +15,9 @@ export class PanelService {
   async resumen({ desde, hasta, meses, loteoId }: PanelConsulta): Promise<Panel> {
     const primerMes = sumarMeses(mesDe(hoy()), -(meses - 1));
 
-    const [cobros, deuda, conteos, morosos, evolucion, planesVigentes] = await Promise.all([
+    const [cobros, devoluciones, deuda, conteos, morosos, evolucion, planesVigentes] = await Promise.all([
       this.consultas.cobrosDelRango({ desde, hasta, loteoId }),
+      this.consultas.devolucionesDelRango({ desde, hasta, loteoId }),
       this.consultas.deuda(loteoId),
       this.consultas.conteos(loteoId),
       this.consultas.morosos(loteoId),
@@ -27,8 +28,12 @@ export class PanelService {
     return {
       desde,
       hasta,
-      cobrado: cobros.total,
+      // Neto: lo devuelto resta por la fecha de la devolución, como en el reporte de cobros.
+      cobrado: cobros.total - devoluciones.total,
+      cobradoBruto: cobros.total,
       cobros: cobros.cantidad,
+      devuelto: devoluciones.total,
+      devoluciones: devoluciones.cantidad,
       deudaTotal: deuda.total,
       deudaVencida: deuda.vencida,
       cuotasPendientes: deuda.cuotas,

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { fechaSchema, hoy, ordenSchema, paginacionSchema, textoOpcional } from './common';
 import { mesSchema } from './cuotas';
 import { morasSchema } from './interes';
+import type { DevolucionResumen } from './devoluciones';
 import type { Periodicidad } from './periodos';
 import type { ParcelaUbicada, SocioResumen } from './parcelas';
 
@@ -80,7 +81,8 @@ export const cobroListarSchema = paginacionSchema.extend({
   desde: fechaSchema.optional(),
   hasta: fechaSchema.optional(),
   medio: z.enum(MEDIOS_PAGO).optional(),
-  estado: z.enum(['vigentes', 'anulados', 'todos']).default('vigentes'),
+  /** Los vigentes incluyen los devueltos: el cobro entró y la devolución resta aparte. */
+  estado: z.enum(['vigentes', 'devueltos', 'anulados', 'todos']).default('vigentes'),
   /** Loteo activo del sidebar. */
   loteoId: z.coerce.number().int().positive().optional(),
 });
@@ -102,6 +104,8 @@ export interface CuotaCobrada {
   mora: number;
   /** Se creó y se cobró en este mismo cobro, por adelantado. */
   adelantada: boolean;
+  /** Es una cuota de un plan de pago: si se devuelve el cobro, solo puede volver a pendiente. */
+  deUnPlan: boolean;
 }
 
 export interface CobroListItem {
@@ -117,6 +121,8 @@ export interface CobroListItem {
   anulado: boolean;
   anuladoEn: string | null;
   motivoAnulacion: string | null;
+  /** La devolución vigente, si se le devolvió el dinero al socio. */
+  devolucion: DevolucionResumen | null;
   registradoPor: string;
 }
 

@@ -15,11 +15,13 @@ export class RecibosService {
   async pdfDeCobro(cobroId: number): Promise<{ nombre: string; pdf: Buffer }> {
     const recibo = await this.prisma.recibo.findUnique({ where: { cobroId } });
     if (!recibo) throw noEncontrado('El cobro no tiene recibo emitido');
+    // La leyenda de devuelto no va en el snapshot: depende de que la devolución siga vigente.
+    const devuelto = await this.prisma.devolucion.count({ where: { cobroId, anuladaEn: null } });
 
     const datos = recibo.datos as unknown as DatosRecibo;
     return {
       nombre: `recibo-${numeroRecibo(recibo.numero)}.pdf`,
-      pdf: await renderizarRecibo(datos, recibo.anulado),
+      pdf: await renderizarRecibo(datos, recibo.anulado ? 'ANULADO' : devuelto > 0 ? 'DEVUELTO' : null),
     };
   }
 }

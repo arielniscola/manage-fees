@@ -94,7 +94,11 @@ export function PanelPage() {
             <Kpi
               etiqueta="Cobrado en el período"
               valor={pesosCortos(data.cobrado)}
-              detalle={`${plural(data.cobros, 'cobro')} · ${formatoFecha(data.desde)} a ${formatoFecha(data.hasta)}`}
+              detalle={
+                data.devuelto > 0
+                  ? `Neto: ${pesosCortos(data.cobradoBruto)} en ${plural(data.cobros, 'cobro')}, menos ${pesosCortos(data.devuelto)} devueltos`
+                  : `${plural(data.cobros, 'cobro')} · ${formatoFecha(data.desde)} a ${formatoFecha(data.hasta)}`
+              }
               tono="ok"
               to={`/cobros?desde=${data.desde}&hasta=${data.hasta}`}
             />
@@ -258,7 +262,7 @@ function Evolucion({ meses }: { meses: MesDeEvolucion[] }) {
 
       <p className="text-[13px] text-tenue">
         «Emitido» son las cuotas que vencían cada mes; «cobrado», lo que efectivamente entró ese mes, con el
-        interés por mora que se haya cobrado. La diferencia entre las dos barras es lo que quedó impago en el período.
+        interés por mora que se haya cobrado y menos lo que se devolvió ese mes. La diferencia entre las dos barras es lo que quedó impago en el período.
       </p>
     </Card>
   );

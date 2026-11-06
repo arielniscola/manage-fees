@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link } from 'react-router';
-import { Ban, Download, FileText } from 'lucide-react';
+import { Ban, Download, FileText, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   ETIQUETA_MEDIO_PAGO,
   cobroAnularSchema,
+  numeroDevolucion,
   numeroRecibo,
   pesos,
   type CobroAnularInput,
@@ -17,20 +18,25 @@ import { Badge, Tabla, Td, Th } from '@/components/ui/display';
 import { Dialog } from '@/components/ui/dialog';
 import { Field, Textarea } from '@/components/ui/field';
 import { fecha, nombreCompleto, plural } from '@/lib/formato';
+import { DevolucionDetalleDialog } from '@/features/devoluciones/DevolucionDetalleDialog';
+import { RegistrarDevolucionDialog } from '@/features/devoluciones/RegistrarDevolucionDialog';
 import { urlRecibo, useAnularCobro, useCobro } from './api';
 
 const enlace =
   'inline-flex h-10 items-center justify-center gap-2 whitespace-nowrap rounded-control border border-borde bg-superficie px-[18px] text-sm font-semibold text-tinta transition-colors hover:bg-superficie-2 [&_svg]:size-4';
 
-/** Detalle de un cobro: qué cuotas canceló, su recibo y la opción de anularlo. */
+/** Detalle de un cobro: qué cuotas canceló, su recibo y las opciones de anularlo o devolver el dinero. */
 export function CobroDetalleDialog({ cobroId, onCerrar }: { cobroId: number | null; onCerrar: () => void }) {
   const { data: cobro, isPending, isError, error } = useCobro(cobroId);
   const [anulando, setAnulando] = useState(false);
+  const [devolviendo, setDevolviendo] = useState(false);
+  const [verDevolucion, setVerDevolucion] = useState<number | null>(null);
 
   return (
     <>
       <Dialog
         abierto={!!cobroId}
+        ancho="lg"
         onAbiertoChange={(v) => !v && onCerrar()}
         titulo={cobro ? `Recibo N° ${numeroRecibo(cobro.numeroRecibo)}` : 'Cobro'}
         descripcion={cobro ? `${nombreCompleto(cobro.socio)} · N° ${cobro.socio.numero}` : undefined}
@@ -39,10 +45,17 @@ export function CobroDetalleDialog({ cobroId, onCerrar }: { cobroId: number | nu
             <div className="flex flex-1 items-center justify-between gap-4">
               {cobro.anulado ? (
                 <span className="text-sm text-tenue">Este cobro está anulado.</span>
+              ) : cobro.devolucion ? (
+                <span className="text-sm text-tenue">Al socio se le devolvió este cobro.</span>
               ) : (
-                <Button variante="peligro" tamanio="sm" onClick={() => setAnulando(true)}>
-                  <Ban /> Anular cobro
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button variante="peligro" tamanio="sm" onClick={() => setAnulando(true)}>
+                    <Ban /> Anular cobro
+                  </Button>
+                  <Button variante="secundario" tamanio="sm" onClick={() => setDevolviendo(true)}>
+                    <Undo2 /> Devolver dinero
+                  </Button>
+                </div>
               )}
               <div className="flex items-center gap-3">
                 <a href={urlRecibo(cobro.id, true)} className={enlace}>
@@ -75,6 +88,16 @@ export function CobroDetalleDialog({ cobroId, onCerrar }: { cobroId: number | nu
                 <span className="mt-1 block text-[13px]">
                   {plural(cobro.cuotas.length, 'cuota')} volvieron a pendiente.
                 </span>
+              </div>
+            )}
+
+            {cobro.devolucion && (
+              <div className="rounded-control bg-pend-fondo px-4 py-3 text-sm text-pend">
+                <b>Dinero devuelto</b> el {fecha(cobro.devolucion.fecha)}, con la devolución N°{' '}
+                {numeroDevolucion(cobro.devolucion.numero)}.{' '}
+                <button type="button" className="font-semibold underline" onClick={() => setVerDevolucion(cobro.devolucion!.id)}>
+                  Ver la devolución
+                </button>
               </div>
             )}
 
@@ -137,6 +160,8 @@ export function CobroDetalleDialog({ cobroId, onCerrar }: { cobroId: number | nu
       </Dialog>
 
       <AnularCobroDialog cobro={anulando ? (cobro ?? null) : null} onCerrar={() => setAnulando(false)} />
+      <RegistrarDevolucionDialog cobro={devolviendo ? (cobro ?? null) : null} onCerrar={() => setDevolviendo(false)} />
+      <DevolucionDetalleDialog devolucionId={verDevolucion} onCerrar={() => setVerDevolucion(null)} />
     </>
   );
 }
@@ -213,6 +238,7 @@ export function AnularCobroDialog({ cobro, onCerrar }: { cobro: CobroDetalle | n
   );
 }
 
-export function BadgeCobro({ anulado }: { anulado: boolean }) {
-  return anulado ? <Badge tono="baja">Anulado</Badge> : <Badge tono="ok">Vigente</Badge>;
+export function BadgeCobro({ anulado, devuelto = false }: { anulado: boolean; devuelto?: boolean }) {
+  if (anulado) return <Badge tono="baja">Anulado</Badge>;
+  return devuelto ? <Badge tono="pend">Devuelto</Badge> : <Badge tono="ok">Vigente</Badge>;
 }

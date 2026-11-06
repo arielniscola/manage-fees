@@ -318,7 +318,7 @@ function PagosDeLaParcela({ parcela }: { parcela: ParcelaDetalle }) {
                 <Td>{nombreCompleto(c.socio)}</Td>
                 <Td className="text-right tabular">{pesos(c.total)}</Td>
                 <Td className="w-px whitespace-nowrap">
-                  <BadgeCobro anulado={c.anulado} />
+                  <BadgeCobro anulado={c.anulado} devuelto={!!c.devolucion} />
                 </Td>
                 <Td className="w-px">
                   <a

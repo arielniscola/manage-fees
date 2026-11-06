@@ -23,7 +23,7 @@ import { urlRecibo, useAnularCobros, useCobros, useEliminarCobros } from './api'
 import { BadgeCobro, CobroDetalleDialog } from './CobroDetalleDialog';
 import { RegistrarPagoDialog } from './RegistrarPagoDialog';
 
-type EstadoFiltro = 'vigentes' | 'anulados' | 'todos';
+type EstadoFiltro = 'vigentes' | 'devueltos' | 'anulados' | 'todos';
 const PAGE_SIZE = 25;
 
 export function CobrosPage() {
@@ -65,9 +65,9 @@ export function CobrosPage() {
   const filtrando = !!filtros.q || filtros.estado !== 'vigentes' || !!medio || porFecha;
   const rango = (d: string, h: string) => filtros.actualizar({ desde: d, hasta: h });
 
-  // Los vigentes se anulan; los anulados se pueden borrar.
+  // Los vigentes se anulan, salvo los devueltos; los anulados se pueden borrar.
   const seleccion = useSeleccion<CobroListItem>({ q: filtros.q, estado: filtros.estado, medio, desde, hasta, loteoId });
-  const paraAnular = seleccion.elegidos.filter((c) => !c.anulado);
+  const paraAnular = seleccion.elegidos.filter((c) => !c.anulado && !c.devolucion);
   const paraEliminar = seleccion.elegidos.filter((c) => c.anulado);
   const enLote = lote === 'anular' ? paraAnular : paraEliminar;
 
@@ -104,6 +104,7 @@ export function CobrosPage() {
             onChange={(estado) => filtros.actualizar({ estado })}
             opciones={[
               { valor: 'vigentes', label: 'Vigentes' },
+              { valor: 'devueltos', label: 'Devueltos' },
               { valor: 'anulados', label: 'Anulados' },
               { valor: 'todos', label: 'Todos' },
             ]}
@@ -244,7 +245,7 @@ export function CobrosPage() {
                         {pesos(c.total)}
                       </Td>
                       <Td>
-                        <BadgeCobro anulado={c.anulado} />
+                        <BadgeCobro anulado={c.anulado} devuelto={!!c.devolucion} />
                       </Td>
                       <Td className="text-right">
                         <a

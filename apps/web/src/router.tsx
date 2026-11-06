@@ -6,6 +6,7 @@ import { LoginPage } from './features/auth/LoginPage';
 import { ConfiguracionAvisosPage } from './features/avisos/ConfiguracionAvisosPage';
 import { HistorialEnviosPage } from './features/avisos/HistorialEnviosPage';
 import { CobrosPage } from './features/cobros/CobrosPage';
+import { DevolucionesPage } from './features/devoluciones/DevolucionesPage';
 import { AdelantoPage } from './features/configuracion/AdelantoPage';
 import { ConfiguracionPage } from './features/configuracion/ConfiguracionPage';
 import { InteresPage } from './features/configuracion/InteresPage';
@@ -47,6 +48,7 @@ export const router = createBrowserRouter([
           { path: 'parcelas/:id', element: <ParcelaDetallePage /> },
           { path: 'cuotas', element: <CuotasPage /> },
           { path: 'cobros', element: <CobrosPage /> },
+          { path: 'devoluciones', element: <DevolucionesPage /> },
           { path: 'planes', element: <PlanesPage /> },
           { path: 'configuracion', element: <ConfiguracionPage /> },
           { path: 'configuracion/cuota', element: <ConfiguracionCuotaPage /> },

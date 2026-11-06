@@ -10,6 +10,7 @@ export * from './adelantos';
 export * from './historial';
 export * from './interes';
 export * from './cobros';
+export * from './devoluciones';
 export * from './planes';
 export * from './avisos';
 export * from './reportes';

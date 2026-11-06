@@ -107,7 +107,7 @@ function TablaCobros({ cobros, onDetalle }: { cobros: CobroListItem[]; onDetalle
             <Td>{ETIQUETA_MEDIO_PAGO[c.medio]}</Td>
             <Td className={`text-right tabular ${c.anulado ? 'text-tenue line-through' : 'font-semibold'}`}>{pesos(c.total)}</Td>
             <Td>
-              <BadgeCobro anulado={c.anulado} />
+              <BadgeCobro anulado={c.anulado} devuelto={!!c.devolucion} />
             </Td>
             <Td className="text-right">
               <a

@@ -137,7 +137,8 @@ export class ParcelasService {
         select: { importe: true, vencimiento: true },
       }),
       this.prisma.cobroDetalle.aggregate({
-        where: { cuota: { parcelaId }, cobro: { anuladoEn: null } },
+        // Un cobro devuelto no es plata que se quedó: deja de contar.
+        where: { cuota: { parcelaId }, cobro: { anuladoEn: null, devoluciones: { none: { anuladaEn: null } } } },
         _sum: { importe: true },
       }),
     ]);

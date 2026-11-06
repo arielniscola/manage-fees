@@ -1,19 +1,25 @@
 import { Injectable } from '@nestjs/common';
 import {
+  ETIQUETA_DESTINO_CUOTAS,
   ETIQUETA_ESTADO_PLAN,
   type TipoReporte,
   ETIQUETA_MEDIO_PAGO,
   etiquetaPeriodo,
   hoy,
   numeroDeParcela,
+  numeroDevolucion,
   numeroPlan,
   numeroRecibo,
   type CobroListItem,
+  type DevolucionListItem,
+  type MedioPago,
   type PlanListItem,
   type SocioListItem,
+  type SocioResumen,
 } from '@mf/shared';
 import { Prisma } from '@prisma/client';
 import { CobrosService } from '../cobros/cobros.service';
+import { DevolucionesService } from '../cobros/devoluciones.service';
 import { aFecha } from '../common/fechas';
 import { cuotasDelLoteo, parcelasDelLoteo, sociosDelLoteo, sqlCobroDelLoteo, sqlCuotaDelLoteo } from '../common/loteo';
 import { PlanesService } from '../planes/planes.service';
@@ -40,6 +46,7 @@ export class ConsultasService {
     private readonly prisma: PrismaService,
     private readonly socios: SociosService,
     private readonly cobros: CobrosService,
+    private readonly devoluciones: DevolucionesService,
     private readonly planes: PlanesService,
   ) {}
 
@@ -55,6 +62,64 @@ export class ConsultasService {
     });
     // El resumen del listado ya deja afuera los anulados: es el mismo número del panel.
     return { filas: items, total: resumen.total, cantidad: resumen.cobros };
+  }
+
+  /** Devoluciones del rango por su propia fecha, anuladas incluidas y marcadas como tales. */
+  async devolucionesDelRango(rango: Rango): Promise<{ filas: DevolucionListItem[]; total: number; cantidad: number }> {
+    const { items, resumen } = await this.devoluciones.listar({
+      desde: rango.desde,
+      hasta: rango.hasta,
+      loteoId: rango.loteoId,
+      estado: 'todas',
+      page: 1,
+      pageSize: TODOS,
+    });
+    return { filas: items, total: resumen.total, cantidad: resumen.devoluciones };
+  }
+
+  /**
+   * Lo que entró y lo que salió en el rango: cada cobro el día que se cobró y cada
+   * devolución, restando, el día que se devolvió. El total de lo que cuenta es la
+   * recaudación neta del panel.
+   */
+  async cajaDelRango(rango: Rango): Promise<MovimientoCaja[]> {
+    const [cobros, devoluciones] = await Promise.all([this.cobrosDelRango(rango), this.devolucionesDelRango(rango)]);
+    const movimientos: MovimientoCaja[] = [
+      ...cobros.filas.map(
+        (c): MovimientoCaja => ({
+          tipo: 'Cobro',
+          comprobante: numeroRecibo(c.numeroRecibo),
+          fecha: c.fecha,
+          socio: c.socio,
+          medio: c.medio,
+          cuotas: c.cantidadCuotas,
+          importe: c.total,
+          estado: c.anulado ? 'Anulado' : c.devolucion ? 'Devuelto' : 'Vigente',
+          cuenta: !c.anulado,
+          referencia: c.devolucion ? `Devolución N° ${numeroDevolucion(c.devolucion.numero)}` : '',
+          motivo: c.motivoAnulacion ?? '',
+          registradoPor: c.registradoPor,
+        }),
+      ),
+      ...devoluciones.filas.map(
+        (d): MovimientoCaja => ({
+          tipo: 'Devolución',
+          comprobante: numeroDevolucion(d.numero),
+          fecha: d.fecha,
+          socio: d.socio,
+          medio: d.medio,
+          cuotas: d.cantidadCuotas,
+          importe: -d.importe,
+          estado: d.anulada ? 'Anulada' : 'Vigente',
+          cuenta: !d.anulada,
+          referencia: `Recibo N° ${numeroRecibo(d.cobro.numeroRecibo)}`,
+          motivo: d.anulada ? `${d.motivo} · Anulada: ${d.motivoAnulacion ?? ''}` : d.motivo,
+          registradoPor: d.registradoPor,
+        }),
+      ),
+    ];
+    // Como el listado de cobros: lo más nuevo primero.
+    return movimientos.sort((a, b) => b.fecha.localeCompare(a.fecha));
   }
 
   async padron(loteoId?: number): Promise<SocioListItem[]> {
@@ -119,6 +184,15 @@ export class ConsultasService {
       ${sqlCobroDelLoteo(Prisma.sql`c`, loteoId)}
       GROUP BY 1
     `;
+    // Lo devuelto resta en el mes en que se devolvió, no en el del cobro.
+    const devuelto = await this.prisma.$queryRaw<{ mes: string; monto: bigint }[]>`
+      SELECT to_char(d."fecha", 'YYYY-MM') AS mes, COALESCE(SUM(d."importe"), 0)::bigint AS monto
+      FROM "Devolucion" d
+      JOIN "Cobro" c ON c."id" = d."cobroId"
+      WHERE d."anuladaEn" IS NULL AND d."fecha" >= ${desde}
+      ${sqlCobroDelLoteo(Prisma.sql`c`, loteoId)}
+      GROUP BY 1
+    `;
     const emitido = await this.prisma.$queryRaw<{ mes: string; monto: bigint }[]>`
       SELECT to_char(cu."vencimiento", 'YYYY-MM') AS mes, COALESCE(SUM(cu."importe"), 0)::bigint AS monto
       FROM "Cuota" cu
@@ -137,6 +211,11 @@ export class ConsultasService {
     };
     acumular(emitido, 'emitido');
     acumular(cobrado, 'cobrado');
+    for (const f of devuelto) {
+      const actual = meses.get(f.mes) ?? { emitido: 0, cobrado: 0 };
+      actual.cobrado -= Number(f.monto);
+      meses.set(f.mes, actual);
+    }
     return meses;
   }
 
@@ -168,8 +247,28 @@ export interface Columna<T> {
  * afuera, para que el total del archivo sea el mismo número que muestra el panel.
  */
 export const CUENTA_EN_TOTAL: Partial<Record<TipoReporte, (fila: never) => boolean>> = {
-  cobros: ((c: CobroListItem) => !c.anulado) as (fila: never) => boolean,
+  cobros: ((m: MovimientoCaja) => m.cuenta) as (fila: never) => boolean,
+  devoluciones: ((d: DevolucionListItem) => !d.anulada) as (fila: never) => boolean,
 };
+
+/** Una fila del reporte de cobros: un cobro, o una devolución con su importe en negativo. */
+export interface MovimientoCaja {
+  tipo: 'Cobro' | 'Devolución';
+  comprobante: string;
+  fecha: string;
+  socio: SocioResumen & { dni: string };
+  medio: MedioPago;
+  cuotas: number;
+  /** Centavos: positivo lo que entró, negativo lo que se devolvió. */
+  importe: number;
+  estado: string;
+  /** Lo anulado no suma en el total. */
+  cuenta: boolean;
+  /** El otro comprobante: la devolución de un cobro devuelto, o el recibo que se devolvió. */
+  referencia: string;
+  motivo: string;
+  registradoPor: string;
+}
 
 /**
  * La manzana y el número de cada parcela del socio, en columnas separadas para poder
@@ -198,18 +297,38 @@ export const COLUMNAS_SOCIOS: Columna<SocioListItem>[] = [
   { titulo: 'Deuda', ancho: 14, valor: (s) => s.estadoCuenta.deuda, moneda: true },
 ];
 
-export const COLUMNAS_COBROS: Columna<CobroListItem>[] = [
-  { titulo: 'Recibo', ancho: 12, valor: (c) => numeroRecibo(c.numeroRecibo) },
-  { titulo: 'Fecha', ancho: 12, valor: (c) => c.fecha },
-  { titulo: 'N° socio', ancho: 10, valor: (c) => c.socio.numero },
-  { titulo: 'Socio', ancho: 26, valor: (c) => `${c.socio.apellido}, ${c.socio.nombre}` },
-  { titulo: 'DNI', ancho: 12, valor: (c) => c.socio.dni },
-  { titulo: 'Medio', ancho: 15, valor: (c) => ETIQUETA_MEDIO_PAGO[c.medio] },
-  { titulo: 'Cuotas', ancho: 9, valor: (c) => c.cantidadCuotas },
-  { titulo: 'Total', ancho: 14, valor: (c) => c.total, moneda: true },
-  { titulo: 'Estado', ancho: 11, valor: (c) => (c.anulado ? 'Anulado' : 'Vigente') },
-  { titulo: 'Registró', ancho: 18, valor: (c) => c.registradoPor },
-  { titulo: 'Motivo de anulación', ancho: 30, valor: (c) => c.motivoAnulacion ?? '' },
+export const COLUMNAS_COBROS: Columna<MovimientoCaja>[] = [
+  { titulo: 'Tipo', ancho: 12, valor: (m) => m.tipo },
+  { titulo: 'Comprobante', ancho: 13, valor: (m) => m.comprobante },
+  { titulo: 'Fecha', ancho: 12, valor: (m) => m.fecha },
+  { titulo: 'N° socio', ancho: 10, valor: (m) => m.socio.numero },
+  { titulo: 'Socio', ancho: 26, valor: (m) => `${m.socio.apellido}, ${m.socio.nombre}` },
+  { titulo: 'DNI', ancho: 12, valor: (m) => m.socio.dni },
+  { titulo: 'Medio', ancho: 15, valor: (m) => ETIQUETA_MEDIO_PAGO[m.medio] },
+  { titulo: 'Cuotas', ancho: 9, valor: (m) => m.cuotas },
+  { titulo: 'Importe', ancho: 14, valor: (m) => m.importe, moneda: true },
+  { titulo: 'Estado', ancho: 11, valor: (m) => m.estado },
+  { titulo: 'Referencia', ancho: 22, valor: (m) => m.referencia },
+  { titulo: 'Registró', ancho: 18, valor: (m) => m.registradoPor },
+  { titulo: 'Motivo', ancho: 30, valor: (m) => m.motivo },
+];
+
+export const COLUMNAS_DEVOLUCIONES: Columna<DevolucionListItem>[] = [
+  { titulo: 'Comprobante', ancho: 13, valor: (d) => numeroDevolucion(d.numero) },
+  { titulo: 'Fecha', ancho: 12, valor: (d) => d.fecha },
+  { titulo: 'N° socio', ancho: 10, valor: (d) => d.socio.numero },
+  { titulo: 'Socio', ancho: 26, valor: (d) => `${d.socio.apellido}, ${d.socio.nombre}` },
+  { titulo: 'DNI', ancho: 12, valor: (d) => d.socio.dni },
+  { titulo: 'Recibo devuelto', ancho: 15, valor: (d) => numeroRecibo(d.cobro.numeroRecibo) },
+  { titulo: 'Fecha del cobro', ancho: 15, valor: (d) => d.cobro.fecha },
+  { titulo: 'Medio', ancho: 15, valor: (d) => ETIQUETA_MEDIO_PAGO[d.medio] },
+  { titulo: 'Cuotas', ancho: 9, valor: (d) => d.cantidadCuotas },
+  { titulo: 'Las cuotas', ancho: 20, valor: (d) => ETIQUETA_DESTINO_CUOTAS[d.destinoCuotas] },
+  { titulo: 'Importe', ancho: 14, valor: (d) => d.importe, moneda: true },
+  { titulo: 'Estado', ancho: 11, valor: (d) => (d.anulada ? 'Anulada' : 'Vigente') },
+  { titulo: 'Motivo', ancho: 30, valor: (d) => d.motivo },
+  { titulo: 'Registró', ancho: 18, valor: (d) => d.registradoPor },
+  { titulo: 'Motivo de anulación', ancho: 30, valor: (d) => d.motivoAnulacion ?? '' },
 ];
 
 export const COLUMNAS_MOROSOS: Columna<SocioListItem>[] = [

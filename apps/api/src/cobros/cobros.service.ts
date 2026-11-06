@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import {
   conceptoCuota,
   hoy,
+  numeroDevolucion,
   type CobroAnular,
   type CobroCrear,
   type CobroDetalle,
@@ -30,6 +31,7 @@ const completo = {
   usuario: { select: { nombre: true } },
   anuladoPor: { select: { nombre: true } },
   recibo: { select: { numero: true } },
+  devoluciones: { where: { anuladaEn: null }, select: { id: true, numero: true, fecha: true } },
   detalles: {
     orderBy: { cuota: { periodo: 'asc' } },
     include: {
@@ -61,6 +63,7 @@ export class CobrosService {
       ...(parcelaId && { detalles: { some: { cuota: { parcelaId } } } }),
       ...(medio && { medio }),
       ...(estado === 'vigentes' && { anuladoEn: null }),
+      ...(estado === 'devueltos' && { anuladoEn: null, devoluciones: { some: { anuladaEn: null } } }),
       ...(estado === 'anulados' && { anuladoEn: { not: null } }),
       ...((desde || hasta) && {
         fecha: { ...(desde && { gte: aFecha(desde) }), ...(hasta && { lte: aFecha(hasta) }) },
@@ -265,6 +268,12 @@ export class CobrosService {
       const cobro = await tx.cobro.findUnique({ where: { id }, include: { detalles: true } });
       if (!cobro) throw noEncontrado('No existe el cobro');
       if (cobro.anuladoEn) throw conflicto('El cobro ya está anulado');
+      const devolucion = await tx.devolucion.findFirst({ where: { cobroId: id, anuladaEn: null }, select: { numero: true } });
+      if (devolucion) {
+        throw conflicto(
+          `El cobro tiene la devolución N° ${numeroDevolucion(devolucion.numero)} registrada: anulá primero la devolución`,
+        );
+      }
 
       // Solo vuelven a pendiente las que siguen pagadas: una anulada a mano queda como está.
       await tx.cuota.updateMany({
@@ -350,6 +359,7 @@ export class CobrosService {
       anulado: c.anuladoEn !== null,
       anuladoEn: c.anuladoEn?.toISOString() ?? null,
       motivoAnulacion: c.motivoAnulacion,
+      devolucion: c.devoluciones[0] ? { ...c.devoluciones[0], fecha: deFecha(c.devoluciones[0].fecha) } : null,
       registradoPor: c.usuario.nombre,
     };
   }
@@ -368,13 +378,14 @@ export class CobrosService {
         importe: d.importe,
         mora: d.mora,
         adelantada: d.cuota.adelantada,
+        deUnPlan: d.cuota.origen === 'PLAN',
       })),
     };
   }
 }
 
 /** Concepto legible de una cuota, sea social o de un plan de pago. */
-function concepto(c: {
+export function concepto(c: {
   origen: OrigenCuota;
   periodo: string;
   periodicidad: Periodicidad;

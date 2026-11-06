@@ -166,6 +166,8 @@ model Usuario {
   cobrosAnulados      Cobro[]    @relation("CobrosAnulados")
   planesCreados       PlanPago[] @relation("PlanesCreados")
   planesCancelados    PlanPago[] @relation("PlanesCancelados")
+  devolucionesRegistradas Devolucion[] @relation("DevolucionesRegistradas")
+  devolucionesAnuladas    Devolucion[] @relation("DevolucionesAnuladas")
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 }
@@ -331,6 +333,9 @@ model Cobro {
   motivoAnulacion String?
   detalles        CobroDetalle[]
   recibo          Recibo?
+  /// Normalmente ninguna o una. Puede haber varias si se anularon devoluciones anteriores:
+  /// la migración agrega un índice único parcial para que haya una sola vigente.
+  devoluciones    Devolucion[]
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 
@@ -355,6 +360,62 @@ model CobroDetalle {
 
   @@unique([cobroId, cuotaId])
   @@index([cuotaId])
+}
+
+/// Qué pasa con las cuotas de un cobro devuelto: vuelven a deberse o quedan anuladas.
+enum DestinoCuotasDevolucion {
+  PENDIENTE
+  ANULADA
+}
+
+/// Devolución al socio del dinero de un cobro entero. Es un egreso con su propia fecha y
+/// medio: el cobro sigue contando el día que entró, y la devolución resta el día que salió.
+/// Emite su propio comprobante, con numeración correlativa aparte de la de los recibos, y
+/// `datos` lo congela como el recibo, para reimprimirlo idéntico.
+model Devolucion {
+  id              Int                     @id @default(autoincrement())
+  numero          Int                     @unique
+  /// Cascade como el recibo: borrar un cobro anulado se lleva sus devoluciones anuladas.
+  cobro           Cobro                   @relation(fields: [cobroId], references: [id], onDelete: Cascade)
+  cobroId         Int
+  fecha           DateTime                @db.Date
+  medio           MedioPago
+  /// Centavos devueltos: siempre el total del cobro.
+  importe         Int
+  /// Motivo elegido de la lista. Las cargadas antes de que existiera la lista no lo tienen.
+  motivoDevolucion   MotivoDevolucion?    @relation(fields: [motivoDevolucionId], references: [id])
+  motivoDevolucionId Int?
+  /// Texto congelado al registrarla: el nombre del motivo y el detalle, si lo hubo. Renombrar
+  /// el motivo después no cambia las devoluciones ya hechas.
+  motivo          String
+  destinoCuotas   DestinoCuotasDevolucion
+  usuario         Usuario                 @relation("DevolucionesRegistradas", fields: [usuarioId], references: [id])
+  usuarioId       Int
+  emitidoEn       DateTime                @default(now())
+  datos           Json
+  anuladaEn       DateTime?
+  anuladaPor      Usuario?                @relation("DevolucionesAnuladas", fields: [anuladaPorId], references: [id])
+  anuladaPorId    Int?
+  motivoAnulacion String?
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  @@index([cobroId])
+  @@index([fecha])
+  @@index([usuarioId])
+  @@index([anuladaPorId])
+  @@index([motivoDevolucionId])
+}
+
+/// Motivos de devolución que se ofrecen al registrar una. Uno ya usado no se borra: se
+/// desactiva y deja de ofrecerse.
+model MotivoDevolucion {
+  id           Int          @id @default(autoincrement())
+  nombre       String       @unique
+  activo       Boolean      @default(true)
+  devoluciones Devolucion[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
 }
 
 /// Comprobante interno, no fiscal, con numeración correlativa propia.

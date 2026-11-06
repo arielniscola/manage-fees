@@ -23,16 +23,21 @@ export interface MesDeEvolucion {
   etiqueta: string;
   /** Centavos de cuotas que vencían en ese mes, sin contar las anuladas. */
   emitido: number;
-  /** Centavos efectivamente cobrados en ese mes. */
+  /** Centavos efectivamente cobrados en ese mes, menos lo devuelto en ese mes. */
   cobrado: number;
 }
 
 export interface Panel {
   desde: string;
   hasta: string;
-  /** Centavos cobrados en el rango, sin contar los cobros anulados. */
+  /** Recaudación neta del rango: lo cobrado menos lo devuelto, sin contar lo anulado. */
   cobrado: number;
+  /** Lo cobrado en el rango antes de restar las devoluciones. */
+  cobradoBruto: number;
   cobros: number;
+  /** Centavos devueltos en el rango, por la fecha de cada devolución. */
+  devuelto: number;
+  devoluciones: number;
   /** Deuda al día de hoy, no del rango: las cuotas impagas no tienen fecha de corte. */
   deudaTotal: number;
   deudaVencida: number;
@@ -51,27 +56,31 @@ export interface Panel {
 
 // ---------------------------------------------------------------- Exportación
 
-export const TIPOS_REPORTE = ['socios', 'cobros', 'morosos', 'planes'] as const;
+export const TIPOS_REPORTE = ['socios', 'cobros', 'devoluciones', 'morosos', 'planes'] as const;
 export type TipoReporte = (typeof TIPOS_REPORTE)[number];
 
 export const ETIQUETA_REPORTE: Record<TipoReporte, string> = {
   socios: 'Socios',
   cobros: 'Cobros',
+  devoluciones: 'Devoluciones',
   morosos: 'Morosos',
   planes: 'Planes de pago',
 };
 
 export const DESCRIPCION_REPORTE: Record<TipoReporte, string> = {
   socios: 'Padrón completo con contacto, parcelas y estado de cuenta de cada socio.',
-  cobros: 'Cobros del período con su recibo, medio de pago y total. El total coincide con el del panel.',
+  cobros:
+    'Cobros del período con su recibo, medio de pago y total, y las devoluciones del período restando. El total neto coincide con el del panel.',
+  devoluciones: 'Devoluciones del período con su comprobante, el recibo devuelto, el medio y el motivo.',
   morosos: 'Socios con cuotas vencidas impagas, del que más debe al que menos.',
   planes: 'Planes de pago con su deuda refinanciada, lo cobrado y el saldo.',
 };
 
-/** Los reportes de socios y morosos son una foto de hoy; los otros dos usan el rango. */
+/** Los reportes de socios y morosos son una foto de hoy; los otros usan el rango. */
 export const USA_RANGO: Record<TipoReporte, boolean> = {
   socios: false,
   cobros: true,
+  devoluciones: true,
   morosos: false,
   planes: true,
 };

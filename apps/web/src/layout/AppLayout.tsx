@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { LogoCooperativa } from '@/components/LogoCooperativa';
 import { Link, NavLink, Outlet, useNavigate } from 'react-router';
-import { Check, ChevronsUpDown, FileSpreadsheet, HandCoins, KeyRound, LayoutDashboard, LogOut, Map, Receipt, ShieldCheck, SlidersHorizontal, Users, Wallet } from 'lucide-react';
+import { Check, ChevronsUpDown, FileSpreadsheet, HandCoins, KeyRound, LayoutDashboard, LogOut, Map, Receipt, ShieldCheck, SlidersHorizontal, Undo2, Users, Wallet } from 'lucide-react';
 import { ETIQUETA_ROL, type UsuarioSesion } from '@mf/shared';
 import { useLogout, useYo } from '@/features/auth/api';
 import { useLoteos } from '@/features/parcelas/api';
@@ -17,6 +17,7 @@ const navegacion = [
   { to: '/parcelas', label: 'Parcelas', icono: Map, soloSuperadmin: false },
   { to: '/cuotas', label: 'Cuotas', icono: Receipt, soloSuperadmin: false },
   { to: '/cobros', label: 'Cobros', icono: Wallet, soloSuperadmin: false },
+  { to: '/devoluciones', label: 'Devoluciones', icono: Undo2, soloSuperadmin: false },
   { to: '/planes', label: 'Planes', icono: HandCoins, soloSuperadmin: false },
   { to: '/reportes', label: 'Reportes', icono: FileSpreadsheet, soloSuperadmin: false },
   { to: '/configuracion', label: 'Configuración', icono: SlidersHorizontal, soloSuperadmin: false },

@@ -10,25 +10,29 @@ import { fechaHoraLegible, fechaLegible } from '../common/fechas';
  * @react-pdf/hyphenate, que solo publica ESM y no se puede cargar desde el build CJS de la API.
  */
 
-const PINO = '#2B5337';
-const TINTA = '#22251F';
-const TENUE = '#6D6A5F';
-const BORDE = '#E2DACB';
+// Lo que se exporta lo reutiliza el comprobante de devolución, para que los dos papeles sean iguales.
+export const PINO = '#2B5337';
+export const TINTA = '#22251F';
+export const TENUE = '#6D6A5F';
+export const BORDE = '#E2DACB';
 const FONDO = '#FAF6EE';
 const MOR = '#A63D2A';
 
-const MARGEN = 44;
+export const MARGEN = 44;
 const ANCHO_PAGINA = 595.28;
-const ANCHO = ANCHO_PAGINA - MARGEN * 2;
+export const ANCHO = ANCHO_PAGINA - MARGEN * 2;
 
 const COL_PARCELA = 72;
 const COL_VENCE = 78;
 const COL_IMPORTE = 88;
 const COL_CONCEPTO = ANCHO - COL_PARCELA - COL_VENCE - COL_IMPORTE;
 
-type Doc = InstanceType<typeof PDFDocument>;
+export type Doc = InstanceType<typeof PDFDocument>;
 
-export function renderizarRecibo(datos: DatosRecibo, anulado: boolean): Promise<Buffer> {
+/** Leyenda en diagonal: un recibo anulado o devuelto, o un comprobante de devolución anulado. */
+export type Sello = 'ANULADO' | 'DEVUELTO' | 'ANULADA';
+
+export function renderizarRecibo(datos: DatosRecibo, marca: Sello | null): Promise<Buffer> {
   const doc = new PDFDocument({
     size: 'A4',
     margins: { top: MARGEN, bottom: MARGEN, left: MARGEN, right: MARGEN },
@@ -43,12 +47,12 @@ export function renderizarRecibo(datos: DatosRecibo, anulado: boolean): Promise<
   });
 
   const listo = nuevoBuffer(doc);
-  dibujar(doc, datos, anulado);
+  dibujar(doc, datos, marca);
   doc.end();
   return listo;
 }
 
-function nuevoBuffer(doc: Doc): Promise<Buffer> {
+export function nuevoBuffer(doc: Doc): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const partes: Buffer[] = [];
     doc.on('data', (parte: Buffer) => partes.push(parte));
@@ -57,7 +61,7 @@ function nuevoBuffer(doc: Doc): Promise<Buffer> {
   });
 }
 
-function dibujar(doc: Doc, datos: DatosRecibo, anulado: boolean) {
+function dibujar(doc: Doc, datos: DatosRecibo, marca: Sello | null) {
   encabezado(doc, datos);
   regla(doc, 16);
   datosDelSocio(doc, datos);
@@ -68,7 +72,7 @@ function dibujar(doc: Doc, datos: DatosRecibo, anulado: boolean) {
   firma(doc);
   pie(doc, datos);
   // Al final, para que quede por encima de todo lo demás.
-  if (anulado) sello(doc);
+  if (marca) sello(doc, marca);
 }
 
 function encabezado(doc: Doc, datos: DatosRecibo) {
@@ -135,7 +139,7 @@ function datosDelSocio(doc: Doc, datos: DatosRecibo) {
   doc.y = maximo - 7;
 }
 
-function tabla(doc: Doc, datos: DatosRecibo) {
+export function tabla(doc: Doc, datos: Pick<DatosRecibo, 'detalles'>) {
   const alturaCabecera = 20;
   let y = doc.y;
 
@@ -186,16 +190,16 @@ function total(doc: Doc, datos: DatosRecibo) {
   doc.y = y + 24;
 }
 
-function observaciones(doc: Doc, texto: string) {
+export function observaciones(doc: Doc, texto: string, titulo = 'Observaciones') {
   const y = doc.y + 16;
   const alto = doc.font('Helvetica').fontSize(10).heightOfString(texto, { width: ANCHO - 20 }) + 26;
   doc.roundedRect(MARGEN, y, ANCHO, alto, 4).lineWidth(1).strokeColor(BORDE).stroke();
-  etiqueta(doc, 'Observaciones', MARGEN + 10, y + 8, ANCHO - 20);
+  etiqueta(doc, titulo, MARGEN + 10, y + 8, ANCHO - 20);
   doc.font('Helvetica').fontSize(10).fillColor(TINTA).text(texto, MARGEN + 10, y + 18, { width: ANCHO - 20 });
   doc.y = y + alto;
 }
 
-function firma(doc: Doc) {
+export function firma(doc: Doc) {
   const y = Math.min(doc.y + 52, 700);
   const ancho = 200;
   const x = MARGEN + ANCHO - ancho;
@@ -214,23 +218,23 @@ function pie(doc: Doc, datos: DatosRecibo) {
     });
 }
 
-/** Marca de agua en diagonal para un recibo anulado. */
-function sello(doc: Doc) {
+/** Marca de agua en diagonal. */
+export function sello(doc: Doc, texto: Sello) {
   doc.save();
   doc.rotate(-22, { origin: [ANCHO_PAGINA / 2, 400] });
   doc.opacity(0.16).font('Helvetica-Bold').fontSize(64).fillColor(MOR);
-  doc.text('ANULADO', 0, 370, { width: ANCHO_PAGINA, align: 'center' });
+  doc.text(texto, 0, 370, { width: ANCHO_PAGINA, align: 'center' });
   doc.restore();
   doc.opacity(1);
 }
 
-function regla(doc: Doc, separacion: number) {
+export function regla(doc: Doc, separacion: number) {
   const y = doc.y + separacion;
   doc.moveTo(MARGEN, y).lineTo(MARGEN + ANCHO, y).lineWidth(1).strokeColor(BORDE).stroke();
   doc.y = y + separacion;
 }
 
-function etiqueta(doc: Doc, texto: string, x: number, y: number, ancho: number, align: 'left' | 'right' = 'left') {
+export function etiqueta(doc: Doc, texto: string, x: number, y: number, ancho: number, align: 'left' | 'right' = 'left') {
   doc
     .font('Helvetica')
     .fontSize(7)

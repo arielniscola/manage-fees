@@ -3,6 +3,7 @@ import { ETIQUETA_REPORTE, USA_RANGO, hoy, type Formato, type TipoReporte } from
 import ExcelJS from 'exceljs';
 import {
   COLUMNAS_COBROS,
+  COLUMNAS_DEVOLUCIONES,
   CUENTA_EN_TOTAL,
   COLUMNAS_MOROSOS,
   COLUMNAS_PLANES,
@@ -71,7 +72,9 @@ export class ExportacionService {
       case 'planes':
         return como(COLUMNAS_PLANES, await this.consultas.planesDelRango(efectivo));
       case 'cobros':
-        return como(COLUMNAS_COBROS, (await this.consultas.cobrosDelRango(efectivo)).filas);
+        return como(COLUMNAS_COBROS, await this.consultas.cajaDelRango(efectivo));
+      case 'devoluciones':
+        return como(COLUMNAS_DEVOLUCIONES, (await this.consultas.devolucionesDelRango(efectivo)).filas);
     }
   }
 
@@ -122,6 +125,7 @@ export class ExportacionService {
   /**
    * Una fila final con la suma de cada columna de dinero. Solo suma las filas que cuentan
    * —un cobro anulado no es plata que entró— para que el total cuadre con el del panel.
+   * En el de cobros las devoluciones van en negativo, así el total es la recaudación neta.
    */
   private agregarTotales(
     hoja: ExcelJS.Worksheet,
@@ -182,7 +186,7 @@ export class ExportacionService {
   }
 }
 
-/** Deja claro cuándo el total no incluye todas las filas, como pasa con los cobros anulados. */
+/** Deja claro cuándo el total no incluye todas las filas, como pasa con lo anulado. */
 function rotuloDeTotal(suman: number, filas: number): string {
   return suman === filas ? `Total (${filas})` : `Total (${suman} de ${filas})`;
 }
